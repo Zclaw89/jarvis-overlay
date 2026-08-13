@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { ResultPopup } from './components/ResultPopup'
 import { useAppStore } from './store/appStore'
+import { JarvisWidget } from './components/JarvisWidget'
 
 type PillState = 'idle' | 'listening' | 'processing' | 'done' | 'error' | 'mic-prompt'
 type WidgetStyle = 'pill' | 'circle' | 'invisible'
@@ -68,6 +69,8 @@ interface TranscriptionComplete {
   source: 'local' | 'cloud'
 }
 
+export default JarvisWidget
+
 function isMicError(msg: string) {
   return msg.toLowerCase().includes('mic') ||
          msg.toLowerCase().includes('microphone') ||
@@ -82,7 +85,7 @@ function isTransientWidgetState(state: PillState) {
   return state === 'listening' || state === 'processing' || state === 'done'
 }
 
-export default function WidgetApp() {
+function LegacyWidgetApp() {
   const [pillState, setPillState] = useState<PillState>('idle')
   const [contentVisible, setContentVisible] = useState(true)
   const [popup, setPopup] = useState<PopupData | null>(null)

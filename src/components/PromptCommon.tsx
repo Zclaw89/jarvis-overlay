@@ -47,6 +47,8 @@ export interface SettingsState {
   defaultActionId: string;
   paused: boolean;
   enhancePromptMode: "auto" | "concise" | "structured" | "detailed";
+  voiceEngine: "kokoro" | "openai" | "elevenlabs" | "edge";
+  voiceId: string;
 }
 
 export interface HistoryItem {
@@ -86,6 +88,8 @@ export const fallbackSettings: SettingsState = {
   defaultActionId: "enhance-prompt",
   paused: false,
   enhancePromptMode: "auto",
+  voiceEngine: "kokoro",
+  voiceId: "kokoro-default",
 };
 
 export function ActionIcon({ actionId }: { actionId: string }) {
@@ -198,18 +202,16 @@ export async function generateWithCurrentProvider(
   selectedText: string,
   userInstruction = "",
 ) {
-  // Always enforce Groq for MeshPrompt!
-  const providerDef = getMeshPromptProvider("groq");
-  const key = await invoke<string | null>("get_provider_key", { provider: "groq" });
-  
-  if (!key) {
-    throw new Error("Groq API Key is not configured. Configure it in Provider Settings.");
+  const providerDef = getMeshPromptProvider(settings.provider.provider);
+  const key = providerDef.authMode === "api-key"
+    ? await invoke<string | null>("get_provider_key", { provider: providerDef.id })
+    : null;
+
+  if (providerDef.authMode === "api-key" && !key) {
+    throw new Error(`${providerDef.label} API key is not configured. Add it in AI Providers.`);
   }
 
-  const isGroq = settings.provider.provider === "groq";
-  const model = isGroq && settings.provider.model
-    ? settings.provider.model
-    : "llama-3.3-70b-versatile";
+  const model = settings.provider.model || providerDef.defaultModel;
 
   if (!selectedText.trim()) {
     throw new Error("Add text to enhance first.");
@@ -219,7 +221,7 @@ export async function generateWithCurrentProvider(
   const request = buildPromptActionRequest(action, { selectedText, userInstruction, settings });
   const client = new MeshPromptClient({
     provider: providerDef,
-    credentials: { apiKey: key ?? undefined, baseUrl: "https://api.groq.com/openai/v1" },
+    credentials: { apiKey: key ?? undefined, baseUrl: settings.provider.baseUrl },
     timeoutMs: settings.timeoutMs,
     appName: "MeshPrompt",
   });

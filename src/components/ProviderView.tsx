@@ -166,13 +166,13 @@ export function ProviderView(props: {
     <div className="stack" style={{ maxWidth: '800px', margin: '0 auto', gap: '24px', padding: '16px 24px' }}>
       <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '20px', marginBottom: '8px' }}>
         <h2 style={{ fontSize: '18px', fontWeight: 600, color: 'var(--text-primary)', margin: '4px 0 0 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <KeyRound size={18} style={{ color: 'var(--accent)' }} /> AI Providers Configuration
+          <KeyRound size={18} style={{ color: 'var(--accent)' }} /> API keys
         </h2>
       </div>
 
       {/* 1. Dropdown Selector */}
       <div className="stack" style={{ gap: '8px' }}>
-        <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Select Provider</label>
+        <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Choose chat provider</label>
         <select
           value={provider.id}
           onChange={(event) => {
@@ -193,7 +193,7 @@ export function ProviderView(props: {
         >
           {meshPromptProviders.map((item) => (
               <option key={item.id} value={item.id} style={{ background: 'var(--surface)', color: 'var(--text-primary)' }}>
-              {item.label} ({item.authMode === "api-key" ? "BYOK / Bring your own key" : "Local provider"})
+              {item.label} ({item.authMode === "api-key" ? "needs an API key" : "runs on this PC"})
             </option>
           ))}
         </select>
@@ -208,14 +208,14 @@ export function ProviderView(props: {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             {getProviderIcon(provider.id)}
             <h4 style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              {provider.label} Settings
+              {provider.label}
             </h4>
           </div>
           {hasSavedKey && <span className="success-chip" style={{ fontSize: '11px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={12} /> Key Secured</span>}
         </div>
 
         <div className="stack" style={{ gap: '8px' }}>
-          <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Active Model</label>
+          <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Chat model</label>
           <select
             value={state.settings.provider.model}
             onChange={(event) => void saveProvider({ ...state.settings.provider, model: event.target.value })}
@@ -241,11 +241,11 @@ export function ProviderView(props: {
         {provider.supportsCustomBaseUrl && (
           <div className="advanced-toggle stack" style={{ gap: '8px' }}>
             <button className="link-button" onClick={() => setShowAdvanced(!showAdvanced)} style={{ alignSelf: 'flex-start', padding: 0, border: 'none', background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '12px' }}>
-              {showAdvanced ? "Hide Base URL overrides" : "Configure Custom API Base URL"}
+              {showAdvanced ? "Hide custom URL" : "Use a custom URL"}
             </button>
             {showAdvanced && (
               <div className="advanced-panel stack" style={{ gap: '8px', width: '100%' }}>
-                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Custom Base URL override</label>
+                <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>Custom URL</label>
                 <div className="row-input" style={{ display: 'flex', gap: '8px', width: '100%' }}>
                   <input
                     value={state.settings.provider.baseUrl ?? ""}
@@ -283,13 +283,13 @@ export function ProviderView(props: {
 
         {provider.authMode === "api-key" && (
           <div className="stack" style={{ gap: '8px' }}>
-            <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>API Key</label>
+            <label style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600, color: 'var(--text-secondary)' }}>API key</label>
             <div className="row-input" style={{ position: 'relative', display: 'flex', width: '100%' }}>
               <input
                 type={showKey ? "text" : "password"}
                 value={apiKeyDraft}
                 onChange={(event) => setApiKeyDraft(event.target.value)}
-                placeholder={hasSavedKey ? "••••••••••••••••••••••••••••••••" : `Enter ${provider.label} API Key`}
+                placeholder={hasSavedKey ? "Saved in this computer's secure store" : `Paste ${provider.label} API key`}
                 style={{
                   flex: 1,
                   background: 'var(--card)',
@@ -320,7 +320,7 @@ export function ProviderView(props: {
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Used automatically for prompt distillation and translation.</p>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: 0 }}>Saved locally in the operating system's protected storage on Windows.</p>
           </div>
         )}
 
@@ -343,8 +343,17 @@ export function ProviderView(props: {
               disabled={testing || (provider.authMode === "api-key" && !hasSavedKey && !apiKeyDraft.trim())}
               style={{ flex: 1, height: '38px', borderRadius: '8px', cursor: 'pointer' }}
             >
-              {testing ? "Testing Connection..." : "Test Connection"}
+              {testing ? "Testing..." : "Test chat"}
             </button>
+            {provider.authMode === "api-key" && hasSavedKey && (
+              <button
+                className="btn-premium-clear"
+                onClick={() => void clearKey()}
+                style={{ flex: 0, height: '38px', borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap', padding: '0 14px' }}
+              >
+                Remove key
+              </button>
+            )}
 
             {testResult && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>

@@ -23,12 +23,32 @@ interface MicrophoneStatus {
 }
 
 type WidgetStyle = 'pill' | 'circle' | 'invisible'
+type VoiceEngine = 'kokoro' | 'openai' | 'elevenlabs' | 'edge'
 
 const WIDGET_STYLE_OPTIONS: { value: WidgetStyle; label: string }[] = [
   { value: 'pill', label: 'Standard Pill' },
   { value: 'circle', label: 'Circular Logo' },
-  { value: 'invisible', label: 'Invisible Glass' },
 ]
+
+const VOICE_OPTIONS: Record<VoiceEngine, { id: string; label: string }[]> = {
+  kokoro: [
+    { id: 'kokoro-default', label: 'Kokoro default' },
+    { id: 'kokoro-warm', label: 'Warm' },
+    { id: 'kokoro-clear', label: 'Clear' },
+  ],
+  openai: [
+    { id: 'openai-alloy', label: 'Alloy' },
+    { id: 'openai-verse', label: 'Verse' },
+    { id: 'openai-coral', label: 'Coral' },
+  ],
+  elevenlabs: [
+    { id: 'eleven-21m00Tcm4TlvDq8ikWAM', label: 'Rachel' },
+    { id: 'eleven-pNInz6obpgDQGcFmaJgB', label: 'Adam' },
+  ],
+  edge: [
+    { id: 'edge-default', label: 'Windows default' },
+  ],
+}
 
 function WidgetStylePreview({ style }: { style: WidgetStyle }) {
   const isCircle = style === 'circle'
@@ -246,6 +266,11 @@ export function Settings() {
   const [memoryWorkspacePath, setMemoryWorkspacePath] = useState('')
   const [widgetEnabled, setWidgetEnabled] = useState(true)
   const [widgetStyle, setWidgetStyle] = useState<WidgetStyle>('pill')
+  const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>('kokoro')
+  const [voiceId, setVoiceId] = useState('kokoro-default')
+  const [openAiVoiceKey, setOpenAiVoiceKey] = useState('')
+  const [elevenLabsKey, setElevenLabsKey] = useState('')
+  const [voiceTestStatus, setVoiceTestStatus] = useState('')
   
   const [saved, setSaved] = useState(false)
   const [dlProgress, setDlProgress] = useState<Record<string, DLProgress>>({})
@@ -272,13 +297,21 @@ export function Settings() {
       if (v === 'push-to-talk' || v === 'toggle') setMode(v)
     })
     invoke<string|null>('get_setting', { key:'sensitivity' }).then(v => v && setSensitivity(+v))
-    invoke<string|null>('get_setting', { key:'api_key' }).then(v => v && setApiKey(v))
+    invoke<string|null>('get_provider_key', { provider:'groq' }).then(v => v && setApiKey(v)).catch(console.error)
+    invoke<string|null>('get_provider_key', { provider:'openai' }).then(v => v && setOpenAiVoiceKey(v)).catch(console.error)
+    invoke<string|null>('get_provider_key', { provider:'elevenlabs' }).then(v => v && setElevenLabsKey(v)).catch(console.error)
     invoke<string|null>('get_setting', { key:'memory_workspace_path' }).then(v => v && setMemoryWorkspacePath(v))
     invoke<string|null>('get_setting', { key:'widget_enabled' }).then(v => {
       setWidgetEnabled(v == null || (v !== 'false' && v !== '0'))
     })
     invoke<string|null>('get_setting', { key:'widget_style' }).then(v => {
-      if (v === 'pill' || v === 'circle' || v === 'invisible') setWidgetStyle(v)
+      if (v === 'pill' || v === 'circle') setWidgetStyle(v)
+    })
+    invoke<string|null>('get_setting', { key:'voice_engine' }).then(v => {
+      if (v === 'kokoro' || v === 'openai' || v === 'elevenlabs' || v === 'edge') setVoiceEngine(v)
+    })
+    invoke<string|null>('get_setting', { key:'voice_id' }).then(v => {
+      if (v) setVoiceId(v)
     })
     invoke<string|null>('get_language_mode').then(v => {
       if (v === 'auto' || v === 'en' || v === 'hi' || v === 'hinglish') setLanguageMode(v)
@@ -327,13 +360,51 @@ export function Settings() {
       invoke('set_setting', { key:'hotkey', value: hotkey }),
       invoke('set_recording_mode', { mode }),
       invoke('set_setting', { key:'sensitivity', value: String(sensitivity) }),
-      invoke('set_setting', { key:'api_key', value: apiKey }),
       invoke('set_setting', { key:'memory_workspace_path', value: memoryWorkspacePath }),
       invoke('set_widget_enabled', { enabled: widgetEnabled }),
       invoke('set_setting', { key:'widget_style', value: widgetStyle }),
+      invoke('set_setting', { key:'voice_engine', value: voiceEngine }),
+      invoke('set_setting', { key:'voice_id', value: voiceId }),
       invoke('reregister_hotkey', { newHotkey: hotkey }).catch(() => {}),
     ])
+    if (apiKey.trim()) await invoke('save_provider_key', { provider: 'groq', apiKey: apiKey.trim() })
+    if (openAiVoiceKey.trim()) await invoke('save_provider_key', { provider: 'openai', apiKey: openAiVoiceKey.trim() })
+    if (elevenLabsKey.trim()) await invoke('save_provider_key', { provider: 'elevenlabs', apiKey: elevenLabsKey.trim() })
     setSaved(true); setTimeout(() => setSaved(false), 1500)
+  }
+
+  const handleVoiceEngineChange = (engine: VoiceEngine) => {
+    setVoiceEngine(engine)
+    setVoiceId(VOICE_OPTIONS[engine][0]?.id ?? '')
+    invoke('set_setting', { key:'voice_engine', value: engine }).catch(console.error)
+    invoke('set_setting', { key:'voice_id', value: VOICE_OPTIONS[engine][0]?.id ?? '' }).catch(console.error)
+  }
+
+  const selectedPaidVoiceMissingKey =
+    (voiceEngine === 'openai' && !openAiVoiceKey.trim()) ||
+    (voiceEngine === 'elevenlabs' && !elevenLabsKey.trim())
+
+  const testVoice = async () => {
+    setVoiceTestStatus('Testing voice...')
+    const engineToUse = selectedPaidVoiceMissingKey ? 'kokoro' : voiceEngine
+    try {
+      if (voiceEngine === 'openai' && openAiVoiceKey.trim()) {
+        await invoke('save_provider_key', { provider: 'openai', apiKey: openAiVoiceKey.trim() })
+      }
+      if (voiceEngine === 'elevenlabs' && elevenLabsKey.trim()) {
+        await invoke('save_provider_key', { provider: 'elevenlabs', apiKey: elevenLabsKey.trim() })
+      }
+      const result = await invoke<string>('test_voice', {
+        request: {
+          engine: engineToUse,
+          voiceId,
+          text: 'Hello, I am Jarvis. Voice is ready.',
+        },
+      })
+      setVoiceTestStatus(selectedPaidVoiceMissingKey ? `${result} Add a key to use the paid voice.` : result)
+    } catch (e) {
+      setVoiceTestStatus(String(e))
+    }
   }
 
   const filteredModels = models.filter(m => {
@@ -466,6 +537,57 @@ export function Settings() {
             </button>
           ))}
         </div>
+      </section>
+
+      {/* Voice */}
+      <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Assistant voice</label>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:10 }}>
+          {([
+            { value:'kokoro', label:'Local (Kokoro)', badge:'free · uses this PC · no credits', desc:'Default voice.' },
+            { value:'openai', label:'ChatGPT / OpenAI', badge:'uses API credits', desc:'Uses gpt-4o-mini-tts.' },
+            { value:'elevenlabs', label:'ElevenLabs', badge:'uses credits', desc:'Off until you choose it and add a key.' },
+          ] as const).map(opt => (
+            <button key={opt.value} type="button" onClick={() => handleVoiceEngineChange(opt.value)} style={{ padding:'14px 12px', borderRadius:10, textAlign:'left', cursor:'pointer', background: voiceEngine===opt.value ? 'color-mix(in oklab, var(--primary) 12%, var(--surface))' : 'var(--surface)', border:`1.5px solid ${voiceEngine===opt.value ? 'var(--primary)' : 'var(--border)'}`, fontFamily:"'Noto Sans',sans-serif" }}>
+              <div style={{ fontSize:13, fontWeight:700, color: voiceEngine===opt.value ? 'var(--primary)' : 'var(--text)', marginBottom:4 }}>{opt.label}</div>
+              <div style={{ fontSize:10, color: opt.value === 'elevenlabs' ? '#F59E0B' : 'var(--text-muted)', marginBottom:6 }}>{opt.badge}</div>
+              <div style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1.35 }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ display:'flex', gap:10, alignItems:'flex-start' }}>
+          <div style={{ flex:1 }}>
+            <label style={{ display:'block', fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:8 }}>Voice</label>
+            <select value={voiceId} onChange={e => {
+              setVoiceId(e.target.value)
+              invoke('set_setting', { key:'voice_id', value: e.target.value }).catch(console.error)
+            }} style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', color:'var(--text)', fontSize:13, fontFamily:"'Noto Sans',sans-serif", outline:'none', cursor:'pointer' }}>
+              {VOICE_OPTIONS[voiceEngine].map(voice => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+            </select>
+          </div>
+          <button type="button" onClick={testVoice} style={{ marginTop:27, fontSize:12, color:'var(--text)', background:'var(--surface-2)', border:'1px solid var(--border)', borderRadius:10, padding:'11px 14px', cursor:'pointer', whiteSpace:'nowrap' }}>Test voice</button>
+        </div>
+
+        {voiceEngine === 'openai' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>OpenAI API key for voice</label>
+            <input type="password" value={openAiVoiceKey} onChange={e=>setOpenAiVoiceKey(e.target.value)} placeholder="Paste OpenAI API key"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', color:'var(--text)', fontSize:13, fontFamily:"'JetBrains Mono',monospace", outline:'none' }} />
+          </div>
+        )}
+
+        {voiceEngine === 'elevenlabs' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>ElevenLabs API key</label>
+            <input type="password" value={elevenLabsKey} onChange={e=>setElevenLabsKey(e.target.value)} placeholder="Paste ElevenLabs API key"
+              style={{ width:'100%', background:'var(--surface)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px', color:'var(--text)', fontSize:13, fontFamily:"'JetBrains Mono',monospace", outline:'none' }} />
+            <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>ElevenLabs will not be used unless you pick it here.</p>
+          </div>
+        )}
+
+        {voiceTestStatus && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>{voiceTestStatus}</p>}
+        {selectedPaidVoiceMissingKey && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>No paid voice key yet. Jarvis will fall back to Local (Kokoro).</p>}
       </section>
 
       {/* Language Mode */}

@@ -72,10 +72,22 @@ struct SettingsState {
     paused: bool,
     #[serde(default = "default_enhance_prompt_mode")]
     enhance_prompt_mode: String,
+    #[serde(default = "default_voice_engine")]
+    voice_engine: String,
+    #[serde(default = "default_voice_id")]
+    voice_id: String,
 }
 
 fn default_enhance_prompt_mode() -> String {
     "auto".to_string()
+}
+
+fn default_voice_engine() -> String {
+    "kokoro".to_string()
+}
+
+fn default_voice_id() -> String {
+    "kokoro-default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +131,8 @@ fn default_settings() -> SettingsState {
         default_action_id: "enhance-prompt".to_string(),
         paused: false,
         enhance_prompt_mode: "auto".to_string(),
+        voice_engine: default_voice_engine(),
+        voice_id: default_voice_id(),
     }
 }
 
@@ -187,7 +201,7 @@ fn write_prompt_history(app: &AppHandle, history: &[HistoryItem]) -> Result<(), 
     fs::write(path, raw).map_err(|err| format!("Failed to write history: {err}"))
 }
 
-fn read_provider_key(app: &AppHandle, provider: &str) -> Result<String, String> {
+pub(crate) fn read_provider_key(app: &AppHandle, provider: &str) -> Result<String, String> {
     let encrypted = fs::read(key_path(app, provider)?).map_err(|err| format!("API key is not configured: {err}"))?;
     let decrypted = decrypt_secret(&encrypted)?;
     String::from_utf8(decrypted).map_err(|err| format!("Stored API key is invalid UTF-8: {err}"))
@@ -242,8 +256,8 @@ fn decrypt_secret(bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(bytes.to_vec())
 }
 
-fn provider_ids() -> [&'static str; 7] {
-    ["xai", "openai", "anthropic", "gemini", "openrouter", "ollama", "groq"]
+fn provider_ids() -> [&'static str; 8] {
+    ["xai", "openai", "anthropic", "gemini", "openrouter", "ollama", "groq", "elevenlabs"]
 }
 
 fn build_key_status(app: &AppHandle) -> BTreeMap<String, bool> {
@@ -391,6 +405,28 @@ fn hide_overlay(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_widget_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    widget
+        .set_ignore_cursor_events(enabled)
+        .map_err(|err| format!("Failed to update widget click-through: {err}"))
+}
+
+#[tauri::command]
+fn open_widget_chat(app: AppHandle) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    widget
+        .set_ignore_cursor_events(false)
+        .map_err(|err| format!("Failed to enable widget clicks: {err}"))?;
+    show_widget_window(&app)?;
+    app.emit("jarvis://open-chat", ()).map_err(|err| format!("Failed to open chat: {err}"))
+}
+
+#[tauri::command]
 fn resize_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app
         .get_webview_window("overlay")
@@ -424,9 +460,8 @@ async fn proxy_request(
     headers: std::collections::HashMap<String, String>,
     body: String,
 ) -> Result<(u16, String), String> {
-    // ENFORCE API LOCK: Restrict Prompt Enhancer requests strictly to Groq
-    if !url.starts_with("https://api.groq.com/") {
-        return Err("Security Violation: Only Groq API is allowed for prompt enhancement.".to_string());
+    if !is_allowed_provider_url(&url) {
+        return Err("Requests are limited to configured AI providers and local Ollama.".to_string());
     }
 
     let client = reqwest::Client::new();
@@ -451,6 +486,156 @@ async fn proxy_request(
     let text = res.text().await.map_err(|e| e.to_string())?;
 
     Ok((status, text))
+}
+
+fn is_allowed_provider_url(url: &str) -> bool {
+    const ALLOWED_PREFIXES: [&str; 8] = [
+        "https://api.openai.com/",
+        "https://api.anthropic.com/",
+        "https://generativelanguage.googleapis.com/",
+        "https://api.groq.com/",
+        "https://api.x.ai/",
+        "https://openrouter.ai/",
+        "http://localhost:",
+        "http://127.0.0.1:",
+    ];
+    ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestVoiceRequest {
+    engine: String,
+    voice_id: String,
+    text: String,
+}
+
+#[tauri::command]
+async fn test_voice(app: AppHandle, request: TestVoiceRequest) -> Result<String, String> {
+    let engine = request.engine.trim().to_lowercase();
+    let text = if request.text.trim().is_empty() {
+        "Hello, I am ready.".to_string()
+    } else {
+        request.text.trim().to_string()
+    };
+
+    match engine.as_str() {
+        "kokoro" | "edge" => speak_with_local_windows_voice(&text).await,
+        "openai" => {
+            let key = read_provider_key(&app, "openai")?;
+            synthesize_openai_tts(&key, &request.voice_id, &text).await
+        }
+        "elevenlabs" => {
+            let key = read_provider_key(&app, "elevenlabs")?;
+            synthesize_elevenlabs_tts(&key, &request.voice_id, &text).await
+        }
+        _ => Err("Choose Local (Kokoro), ChatGPT / OpenAI, or ElevenLabs.".to_string()),
+    }
+}
+
+async fn speak_with_local_windows_voice(text: &str) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak({:?}); $s.Dispose()",
+            text
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to start local voice: {err}"))?;
+        if status.success() {
+            Ok("Played with this PC's local voice.".to_string())
+        } else {
+            Err("Local voice test failed on this PC.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = text;
+        Ok("Local voice test is available in the Windows app.".to_string())
+    }
+}
+
+async fn synthesize_openai_tts(api_key: &str, voice_id: &str, text: &str) -> Result<String, String> {
+    let voice = if voice_id.trim().is_empty() || voice_id == "openai-alloy" {
+        "alloy"
+    } else {
+        voice_id.trim().strip_prefix("openai-").unwrap_or(voice_id.trim())
+    };
+    let body = serde_json::json!({
+        "model": "gpt-4o-mini-tts",
+        "voice": voice,
+        "input": text,
+        "format": "mp3"
+    });
+    let bytes = reqwest::Client::new()
+        .post("https://api.openai.com/v1/audio/speech")
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("OpenAI voice request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("OpenAI voice request failed: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("OpenAI voice response failed: {err}"))?;
+    play_audio_bytes("jarvis-openai-tts.mp3", &bytes).await
+}
+
+async fn synthesize_elevenlabs_tts(api_key: &str, voice_id: &str, text: &str) -> Result<String, String> {
+    let voice = if voice_id.trim().is_empty() || voice_id == "eleven-rachel" {
+        "21m00Tcm4TlvDq8ikWAM"
+    } else {
+        voice_id.trim().strip_prefix("eleven-").unwrap_or(voice_id.trim())
+    };
+    let url = format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}");
+    let body = serde_json::json!({
+        "text": text,
+        "model_id": "eleven_multilingual_v2"
+    });
+    let bytes = reqwest::Client::new()
+        .post(url)
+        .header("xi-api-key", api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("ElevenLabs voice request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("ElevenLabs voice request failed: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("ElevenLabs voice response failed: {err}"))?;
+    play_audio_bytes("jarvis-elevenlabs-tts.mp3", &bytes).await
+}
+
+async fn play_audio_bytes(filename: &str, bytes: &[u8]) -> Result<String, String> {
+    let path = std::env::temp_dir().join(filename);
+    fs::write(&path, bytes).map_err(|err| format!("Failed to save voice test audio: {err}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_string = path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Add-Type -AssemblyName presentationCore; $p = New-Object System.Windows.Media.MediaPlayer; $p.Open([Uri]'{path_string}'); $p.Play(); Start-Sleep -Seconds 5; $p.Close()"
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to play voice test audio: {err}"))?;
+        if status.success() {
+            Ok("Voice test played.".to_string())
+        } else {
+            Err("Voice test audio was created but could not be played.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(format!("Voice test audio was created at {}.", path.display()))
+    }
 }
 
 #[tauri::command]
@@ -1414,6 +1599,7 @@ fn main() {
             // ── Consolidated System Tray ──
             {
                 let title_i = MenuItem::with_id(app, "title", format!("MeshUtility Suite v{}", env!("CARGO_PKG_VERSION")), false, None::<&str>)?;
+                let open_chat = MenuItem::with_id(app, "open_chat", "Open Jarvis Chat", true, None::<&str>)?;
                 let open_voice = MenuItem::with_id(app, "open_voice", "Open Dictation Suite", true, None::<&str>)?;
                 let open_prompt = MenuItem::with_id(app, "open_prompt", "Open Prompt Enhancer", true, None::<&str>)?;
                 let open_overlay = MenuItem::with_id(app, "open_overlay", "Open Prompt Overlay", true, None::<&str>)?;
@@ -1424,6 +1610,7 @@ fn main() {
                 let menu = Menu::with_items(app, &[
                     &title_i,
                     &separator_1,
+                    &open_chat,
                     &open_voice,
                     &open_prompt,
                     &open_overlay,
@@ -1448,6 +1635,9 @@ fn main() {
                         "open_voice" => {
                             let _ = open_main_window(app);
                             let _ = app.emit("navigate-view", "dashboard");
+                        }
+                        "open_chat" => {
+                            let _ = open_widget_chat(app.clone());
                         }
                         "open_prompt" => {
                             let _ = open_main_window(app);
@@ -1509,6 +1699,8 @@ fn main() {
             show_main_window,
             show_widget,
             hide_widget,
+            open_widget_chat,
+            set_widget_click_through,
             set_widget_enabled,
             get_language_mode,
             set_language_mode,
@@ -1530,6 +1722,7 @@ fn main() {
             resize_overlay,
             set_paused,
             proxy_request,
+            test_voice,
             check_for_updates,
             install_update,
             unregister_global_shortcut,

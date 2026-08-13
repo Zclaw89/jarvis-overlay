@@ -70,8 +70,8 @@ const GROUPS: NavGroup[] = [
   {
     title: 'Configuration',
     items: [
-      { id: 'voice-settings', label: 'Voice Settings', icon: <Mic2 size={15} strokeWidth={1.8} /> },
-      { id: 'prompt-providers', label: 'AI Providers', icon: <KeyRound size={15} strokeWidth={1.8} /> },
+      { id: 'voice-settings', label: 'Voice & Hotkey', icon: <Mic2 size={15} strokeWidth={1.8} /> },
+      { id: 'prompt-providers', label: 'API Keys', icon: <KeyRound size={15} strokeWidth={1.8} /> },
       { id: 'prompt-settings', label: 'Enhancer Settings', icon: <Settings2 size={15} strokeWidth={1.8} /> },
       { id: 'appearance', label: 'Appearance', icon: <Palette size={15} strokeWidth={1.8} /> },
       { id: 'about', label: 'About', icon: <Info size={15} strokeWidth={1.8} /> },
