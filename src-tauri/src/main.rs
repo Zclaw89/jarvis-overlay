@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 
 use tauri::{
