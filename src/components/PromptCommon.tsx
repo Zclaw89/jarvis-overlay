@@ -49,6 +49,7 @@ export interface SettingsState {
   enhancePromptMode: "auto" | "concise" | "structured" | "detailed";
   voiceEngine: "kokoro" | "openai" | "elevenlabs" | "edge";
   voiceId: string;
+  brainMode: "api" | "mailbox";
 }
 
 export interface HistoryItem {
@@ -90,6 +91,7 @@ export const fallbackSettings: SettingsState = {
   enhancePromptMode: "auto",
   voiceEngine: "kokoro",
   voiceId: "kokoro-default",
+  brainMode: "api",
 };
 
 export function ActionIcon({ actionId }: { actionId: string }) {

@@ -12,9 +12,17 @@ type ChatMessage = {
   content: string;
 };
 
+type MailboxJob = {
+  id: string;
+  inboxDir: string;
+  outboxDir: string;
+  screenshotPath?: string | null;
+};
+
 const ORB_SIZE = 76;
 const CHAT_WIDTH = 360;
 const CHAT_HEIGHT = 500;
+const SCREEN_REQUEST_PATTERN = /\b(analy[sz]e this|look at this|what'?s on my screen|what is on my screen|my screen|this screen|screenshot)\b/i;
 
 function shortProviderLabel(settings: SettingsState) {
   try {
@@ -36,6 +44,7 @@ export function JarvisWidget() {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Ready");
+  const [pendingMailboxJob, setPendingMailboxJob] = useState<MailboxJob | null>(null);
 
   const providerLabel = useMemo(() => shortProviderLabel(settings), [settings]);
 
@@ -106,6 +115,77 @@ export function JarvisWidget() {
     await invoke("hide_widget").catch(() => {});
   }
 
+  useEffect(() => {
+    if (!pendingMailboxJob) return;
+    const timer = setInterval(() => {
+      void pollMailboxReply(pendingMailboxJob);
+    }, 3500);
+    void pollMailboxReply(pendingMailboxJob);
+    return () => clearInterval(timer);
+  }, [pendingMailboxJob]);
+
+  async function getBrainMode(latestSettings: SettingsState) {
+    const stored = await invoke<string | null>("get_setting", { key: "brain_mode" }).catch(() => null);
+    if (stored === "mailbox" || stored === "api") return stored;
+    return latestSettings.brainMode ?? "api";
+  }
+
+  function shouldAttachScreenshot(text: string) {
+    return SCREEN_REQUEST_PATTERN.test(text);
+  }
+
+  async function sendToMailbox(text: string, includeScreenshot: boolean) {
+    const job = await invoke<MailboxJob>("create_mailbox_job", {
+      request: text,
+      includeScreenshot,
+    });
+    setPendingMailboxJob(job);
+    setMessages((current) => [
+      ...current,
+      {
+        role: "assistant",
+        content: includeScreenshot
+          ? `Sent to Zeus with a screenshot. Waiting for reply in ${job.outboxDir}.`
+          : `Sent to Zeus. Waiting for reply in ${job.outboxDir}.`,
+      },
+    ]);
+    setStatus("Waiting for Zeus...");
+  }
+
+  async function pollMailboxReply(job: MailboxJob) {
+    try {
+      const reply = await invoke<string | null>("read_mailbox_reply", { jobId: job.id });
+      if (!reply?.trim()) return;
+      setPendingMailboxJob(null);
+      setBusy(false);
+      setStatus("Zeus replied");
+      setMessages((current) => [...current, { role: "assistant", content: reply }]);
+      const latestSettings = await refreshSettings();
+      await speakReply(reply, latestSettings);
+    } catch (error) {
+      setPendingMailboxJob(null);
+      setBusy(false);
+      setStatus("Mailbox error");
+      setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? error.message : String(error) }]);
+    }
+  }
+
+  async function speakReply(text: string, latestSettings: SettingsState) {
+    let engine = latestSettings.voiceEngine;
+    if (engine === "openai" || engine === "elevenlabs") {
+      const provider = engine === "openai" ? "openai" : "elevenlabs";
+      const key = await invoke<string | null>("get_provider_key", { provider }).catch(() => null);
+      if (!key) engine = "kokoro";
+    }
+    await invoke("test_voice", {
+      request: {
+        engine,
+        voiceId: latestSettings.voiceId,
+        text,
+      },
+    }).catch(() => {});
+  }
+
   async function sendMessage() {
     const text = draft.trim();
     if (!text || busy) return;
@@ -117,6 +197,13 @@ export function JarvisWidget() {
 
     try {
       const latestSettings = await refreshSettings();
+      const useMailbox = await getBrainMode(latestSettings);
+      const includeScreenshot = shouldAttachScreenshot(text);
+      if (useMailbox === "mailbox" || includeScreenshot) {
+        await sendToMailbox(text, includeScreenshot);
+        return;
+      }
+
       const provider = getMeshPromptProvider(latestSettings.provider.provider);
       const apiKey = provider.authMode === "api-key"
         ? await invoke<string | null>("get_provider_key", { provider: provider.id })

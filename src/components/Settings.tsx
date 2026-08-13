@@ -24,6 +24,7 @@ interface MicrophoneStatus {
 
 type WidgetStyle = 'pill' | 'circle' | 'invisible'
 type VoiceEngine = 'kokoro' | 'openai' | 'elevenlabs' | 'edge'
+type BrainMode = 'api' | 'mailbox'
 
 const WIDGET_STYLE_OPTIONS: { value: WidgetStyle; label: string }[] = [
   { value: 'pill', label: 'Standard Pill' },
@@ -268,6 +269,7 @@ export function Settings() {
   const [widgetStyle, setWidgetStyle] = useState<WidgetStyle>('pill')
   const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>('kokoro')
   const [voiceId, setVoiceId] = useState('kokoro-default')
+  const [brainMode, setBrainMode] = useState<BrainMode>('api')
   const [openAiVoiceKey, setOpenAiVoiceKey] = useState('')
   const [elevenLabsKey, setElevenLabsKey] = useState('')
   const [voiceTestStatus, setVoiceTestStatus] = useState('')
@@ -312,6 +314,9 @@ export function Settings() {
     })
     invoke<string|null>('get_setting', { key:'voice_id' }).then(v => {
       if (v) setVoiceId(v)
+    })
+    invoke<string|null>('get_setting', { key:'brain_mode' }).then(v => {
+      if (v === 'api' || v === 'mailbox') setBrainMode(v)
     })
     invoke<string|null>('get_language_mode').then(v => {
       if (v === 'auto' || v === 'en' || v === 'hi' || v === 'hinglish') setLanguageMode(v)
@@ -365,6 +370,7 @@ export function Settings() {
       invoke('set_setting', { key:'widget_style', value: widgetStyle }),
       invoke('set_setting', { key:'voice_engine', value: voiceEngine }),
       invoke('set_setting', { key:'voice_id', value: voiceId }),
+      invoke('set_setting', { key:'brain_mode', value: brainMode }),
       invoke('reregister_hotkey', { newHotkey: hotkey }).catch(() => {}),
     ])
     if (apiKey.trim()) await invoke('save_provider_key', { provider: 'groq', apiKey: apiKey.trim() })
@@ -378,6 +384,11 @@ export function Settings() {
     setVoiceId(VOICE_OPTIONS[engine][0]?.id ?? '')
     invoke('set_setting', { key:'voice_engine', value: engine }).catch(console.error)
     invoke('set_setting', { key:'voice_id', value: VOICE_OPTIONS[engine][0]?.id ?? '' }).catch(console.error)
+  }
+
+  const handleBrainModeChange = (mode: BrainMode) => {
+    setBrainMode(mode)
+    invoke('set_setting', { key:'brain_mode', value: mode }).catch(console.error)
   }
 
   const selectedPaidVoiceMissingKey =
@@ -455,6 +466,23 @@ export function Settings() {
               alert(`Could not register hotkey ${combo}. It might be reserved by another app (e.g. PowerToys uses Alt+Space). Error: ${e}`);
             });
         }} />
+      </section>
+
+      {/* Brain */}
+      <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Brain</label>
+        <div style={{ display:'flex', gap:10 }}>
+          {([
+            { value:'api', label:'API key (fast)', desc:'Uses the selected chat provider for normal questions.' },
+            { value:'mailbox', label:'Zeus mailbox (screenshot + wait)', desc:'Writes files in Documents for Zeus to answer later.' },
+          ] as const).map(opt => (
+            <button key={opt.value} type="button" onClick={() => handleBrainModeChange(opt.value)} style={{ flex:1, padding:'14px 16px', borderRadius:10, textAlign:'left', cursor:'pointer', transition:'all 0.15s', background: brainMode===opt.value ? 'color-mix(in oklab, var(--primary) 12%, var(--surface))' : 'var(--surface)', border:`1.5px solid ${brainMode===opt.value ? 'var(--primary)' : 'var(--border)'}`, boxShadow: brainMode===opt.value ? '0 0 0 1px var(--primary)' : 'none', fontFamily:"'Noto Sans',sans-serif" }}>
+              <div style={{ fontSize:13, fontWeight:600, color: brainMode===opt.value ? 'var(--primary)' : 'var(--text)', marginBottom:3 }}>{opt.label}</div>
+              <div style={{ fontSize:12, color:'var(--text-muted)' }}>{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>“Analyze this” and “what’s on my screen?” attach a normal screenshot for Zeus.</p>
       </section>
 
       {/* Widget Visibility */}

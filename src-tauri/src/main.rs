@@ -79,6 +79,8 @@ struct SettingsState {
     voice_engine: String,
     #[serde(default = "default_voice_id")]
     voice_id: String,
+    #[serde(default = "default_brain_mode")]
+    brain_mode: String,
 }
 
 fn default_enhance_prompt_mode() -> String {
@@ -91,6 +93,10 @@ fn default_voice_engine() -> String {
 
 fn default_voice_id() -> String {
     "kokoro-default".to_string()
+}
+
+fn default_brain_mode() -> String {
+    "api".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +118,23 @@ struct PromptAppStatePayload {
     settings: SettingsState,
     history: Vec<HistoryItem>,
     key_status: BTreeMap<String, bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MailboxPathsPayload {
+    root: String,
+    inbox: String,
+    outbox: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MailboxJobPayload {
+    id: String,
+    inbox_dir: String,
+    outbox_dir: String,
+    screenshot_path: Option<String>,
 }
 
 fn default_settings() -> SettingsState {
@@ -136,6 +159,7 @@ fn default_settings() -> SettingsState {
         enhance_prompt_mode: "auto".to_string(),
         voice_engine: default_voice_engine(),
         voice_id: default_voice_id(),
+        brain_mode: default_brain_mode(),
     }
 }
 
@@ -148,6 +172,103 @@ fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|err| format!("Failed to resolve app data directory: {err}"))?;
     fs::create_dir_all(&dir).map_err(|err| format!("Failed to create app data directory: {err}"))?;
     Ok(dir)
+}
+
+fn mailbox_root() -> Result<PathBuf, String> {
+    let documents = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Could not find the user's Documents folder.".to_string())?;
+    Ok(documents.join("JarvisMailbox"))
+}
+
+fn ensure_mailbox_dirs_at(root: &std::path::Path) -> Result<(PathBuf, PathBuf), String> {
+    let inbox = root.join("inbox");
+    let outbox = root.join("outbox");
+    fs::create_dir_all(&inbox).map_err(|err| format!("Failed to create mailbox inbox: {err}"))?;
+    fs::create_dir_all(&outbox).map_err(|err| format!("Failed to create mailbox outbox: {err}"))?;
+    Ok((inbox, outbox))
+}
+
+fn new_mailbox_job_id() -> String {
+    format!(
+        "job-{}-{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S%3f"),
+        std::process::id()
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn write_mailbox_job_at(
+    root: &std::path::Path,
+    request: &str,
+    screenshot: Option<&[u8]>,
+) -> Result<MailboxJobPayload, String> {
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(root)?;
+    let id = new_mailbox_job_id();
+    let inbox_dir = inbox_root.join(&id);
+    let outbox_dir = outbox_root.join(&id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to create mailbox job: {err}"))?;
+    fs::create_dir_all(&outbox_dir).map_err(|err| format!("Failed to create mailbox reply folder: {err}"))?;
+    fs::write(inbox_dir.join("request.txt"), request).map_err(|err| format!("Failed to write mailbox request: {err}"))?;
+
+    let screenshot_path = if let Some(bytes) = screenshot {
+        let path = inbox_dir.join("screenshot.png");
+        fs::write(&path, bytes).map_err(|err| format!("Failed to write mailbox screenshot: {err}"))?;
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let meta = serde_json::json!({
+        "id": id,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+        "hasScreenshot": screenshot_path.is_some(),
+    });
+    fs::write(
+        inbox_dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).map_err(|err| format!("Failed to encode mailbox metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox metadata: {err}"))?;
+
+    Ok(MailboxJobPayload {
+        id,
+        inbox_dir: inbox_dir.to_string_lossy().to_string(),
+        outbox_dir: outbox_dir.to_string_lossy().to_string(),
+        screenshot_path,
+    })
+}
+
+fn read_mailbox_reply_at(root: &std::path::Path, job_id: &str) -> Result<Option<String>, String> {
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(root)?;
+    let safe_id = job_id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid mailbox job id.".to_string());
+    }
+
+    let outbox_dir = outbox_root.join(safe_id);
+    let reply_path = ["reply.txt", "reply.md"]
+        .iter()
+        .map(|name| outbox_dir.join(name))
+        .find(|path| path.exists());
+
+    let Some(reply_path) = reply_path else {
+        return Ok(None);
+    };
+
+    let reply = fs::read_to_string(&reply_path).map_err(|err| format!("Failed to read mailbox reply: {err}"))?;
+    let done = serde_json::json!({
+        "id": safe_id,
+        "replyPath": reply_path.to_string_lossy(),
+        "completedAt": chrono::Utc::now().to_rfc3339(),
+    });
+    let inbox_dir = inbox_root.join(safe_id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to mark mailbox job done: {err}"))?;
+    fs::write(
+        inbox_dir.join("done.json"),
+        serde_json::to_string_pretty(&done).map_err(|err| format!("Failed to encode mailbox done marker: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox done marker: {err}"))?;
+    Ok(Some(reply))
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -503,6 +624,86 @@ fn is_allowed_provider_url(url: &str) -> bool {
         "http://127.0.0.1:",
     ];
     ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
+}
+
+#[tauri::command]
+fn get_mailbox_paths() -> Result<MailboxPathsPayload, String> {
+    let root = mailbox_root()?;
+    let (inbox, outbox) = ensure_mailbox_dirs_at(&root)?;
+    Ok(MailboxPathsPayload {
+        root: root.to_string_lossy().to_string(),
+        inbox: inbox.to_string_lossy().to_string(),
+        outbox: outbox.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn create_mailbox_job(request: String, include_screenshot: bool) -> Result<MailboxJobPayload, String> {
+    let root = mailbox_root()?;
+    let id = new_mailbox_job_id();
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(&root)?;
+    let inbox_dir = inbox_root.join(&id);
+    let outbox_dir = outbox_root.join(&id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to create mailbox job: {err}"))?;
+    fs::create_dir_all(&outbox_dir).map_err(|err| format!("Failed to create mailbox reply folder: {err}"))?;
+
+    let screenshot_path = if include_screenshot {
+        let path = inbox_dir.join("screenshot.png");
+        capture_screenshot_to_file(&path)?;
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    fs::write(inbox_dir.join("request.txt"), request.trim())
+        .map_err(|err| format!("Failed to write mailbox request: {err}"))?;
+    let meta = serde_json::json!({
+        "id": id,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+        "hasScreenshot": screenshot_path.is_some(),
+    });
+    fs::write(
+        inbox_dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).map_err(|err| format!("Failed to encode mailbox metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox metadata: {err}"))?;
+
+    Ok(MailboxJobPayload {
+        id,
+        inbox_dir: inbox_dir.to_string_lossy().to_string(),
+        outbox_dir: outbox_dir.to_string_lossy().to_string(),
+        screenshot_path,
+    })
+}
+
+#[tauri::command]
+fn read_mailbox_reply(job_id: String) -> Result<Option<String>, String> {
+    read_mailbox_reply_at(&mailbox_root()?, &job_id)
+}
+
+fn capture_screenshot_to_file(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let path_arg = path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $bmp.Save('{path_arg}',[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()"
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to start screenshot capture: {err}"))?;
+        if status.success() && path.exists() {
+            Ok(())
+        } else {
+            Err("Could not capture the screen.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("Screenshot capture is available in the Windows app.".to_string())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1613,6 +1814,36 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
 
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mailbox_write_job_and_read_reply_marks_done() {
+        let root = std::env::temp_dir().join(format!(
+            "jarvis-mailbox-test-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+
+        let job = write_mailbox_job_at(&root, "analyze this", Some(b"png-bytes")).expect("write mailbox job");
+        let inbox_dir = PathBuf::from(&job.inbox_dir);
+        let outbox_dir = PathBuf::from(&job.outbox_dir);
+
+        assert_eq!(fs::read_to_string(inbox_dir.join("request.txt")).unwrap(), "analyze this");
+        assert!(inbox_dir.join("screenshot.png").exists());
+        assert!(read_mailbox_reply_at(&root, &job.id).unwrap().is_none());
+
+        fs::write(outbox_dir.join("reply.txt"), "Zeus says hello.").unwrap();
+        let reply = read_mailbox_reply_at(&root, &job.id).unwrap();
+
+        assert_eq!(reply.as_deref(), Some("Zeus says hello."));
+        assert!(inbox_dir.join("done.json").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
 fn main() {
     let builder = tauri::Builder::default();
 
@@ -1921,6 +2152,9 @@ fn main() {
             resize_overlay,
             set_paused,
             proxy_request,
+            get_mailbox_paths,
+            create_mailbox_job,
+            read_mailbox_reply,
             test_voice,
             check_for_updates,
             install_update,

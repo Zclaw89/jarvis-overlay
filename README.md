@@ -17,6 +17,8 @@ Open **Settings > Voice & Hotkey** for voice. **Local (Kokoro)** is the default 
 
 If the Kokoro helper is still downloading, Jarvis uses the PC's Windows voice once and tries Kokoro again next time. OpenAI and ElevenLabs only run after you select them and save a key.
 
+Use the **Brain** picker for **API key (fast)** or **Zeus mailbox (screenshot + wait)**. The mailbox is plain files under `Documents\JarvisMailbox\inbox` and `Documents\JarvisMailbox\outbox`. “Analyze this” takes a normal screenshot, writes an inbox job, and waits for Zeus to write `reply.txt` or `reply.md` in that job’s outbox folder.
+
 ## Build the Windows app
 
 Run this on the Windows PC that will build the `.exe`:
