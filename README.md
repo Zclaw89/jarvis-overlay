@@ -13,7 +13,9 @@ npm run tauri dev
 
 Open **Settings > API Keys** for chat keys such as OpenAI, Anthropic, Gemini, Groq, or local Ollama URL.
 
-Open **Settings > Voice & Hotkey** for voice. **Local (Kokoro)** is the default and uses this PC. OpenAI and ElevenLabs only run after you select them and save a key.
+Open **Settings > Voice & Hotkey** for voice. **Local (Kokoro)** is the default and uses this PC. On first speak, the Windows app downloads and starts its Kokoro helper automatically. No Python install is required.
+
+If the Kokoro helper is still downloading, Jarvis uses the PC's Windows voice once and tries Kokoro again next time. OpenAI and ElevenLabs only run after you select them and save a key.
 
 ## Build the Windows app
 
@@ -31,7 +33,6 @@ The NSIS installer is written under `src-tauri/target/release/bundle/nsis/`. Thi
 - Login/accounts
 - Computer-use agent actions
 - Signed Windows installer
-- Bundled Kokoro helper; the local voice path currently falls back to the PC's local Windows voice when Kokoro is not installed
 
 ## License
 

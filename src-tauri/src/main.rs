@@ -13,6 +13,7 @@ use std::fs;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
+use std::time::Duration;
 
 use tauri::{
     Manager, Emitter, PhysicalPosition, AppHandle, State, LogicalSize, Size,
@@ -25,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_HISTORY: usize = 10;
 const WIDGET_BOTTOM_MARGIN_PX: u32 = 96;
+const KOKORO_HELPER_URL: &str = "http://127.0.0.1:8765";
 
 // ─── Shared State ────────────────────────────────────────────────────────────
 
@@ -521,7 +523,8 @@ async fn test_voice(app: AppHandle, request: TestVoiceRequest) -> Result<String,
     };
 
     match engine.as_str() {
-        "kokoro" | "edge" => speak_with_local_windows_voice(&text).await,
+        "kokoro" => synthesize_kokoro_tts(&app, &request.voice_id, &text).await,
+        "edge" => speak_with_local_windows_voice(&text).await,
         "openai" => {
             let key = read_provider_key(&app, "openai")?;
             synthesize_openai_tts(&key, &request.voice_id, &text).await
@@ -533,6 +536,201 @@ async fn test_voice(app: AppHandle, request: TestVoiceRequest) -> Result<String,
         _ => Err("Choose Local (Kokoro), ChatGPT / OpenAI, or ElevenLabs.".to_string()),
     }
 }
+
+async fn synthesize_kokoro_tts(app: &AppHandle, voice_id: &str, text: &str) -> Result<String, String> {
+    let helper_result = match ensure_kokoro_helper_started(app).await {
+        Ok(()) => request_kokoro_helper_speech(voice_id, text).await,
+        Err(err) => Err(err),
+    };
+
+    match helper_result {
+        Ok(bytes) => play_audio_bytes("jarvis-kokoro.wav", &bytes).await.map(|_| "Kokoro voice test played.".to_string()),
+        Err(err) => {
+            let fallback = speak_with_local_windows_voice(text).await?;
+            Ok(format!("Kokoro helper was not ready ({err}). {fallback}"))
+        }
+    }
+}
+
+async fn request_kokoro_helper_speech(voice_id: &str, text: &str) -> Result<Vec<u8>, String> {
+    let body = serde_json::json!({
+        "model": "kokoro",
+        "voice": voice_id,
+        "input": text,
+        "format": "wav"
+    });
+    let bytes = reqwest::Client::new()
+        .post(format!("{KOKORO_HELPER_URL}/v1/audio/speech"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("Kokoro helper request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("Kokoro helper returned an error: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("Kokoro helper audio failed: {err}"))?;
+    Ok(bytes.to_vec())
+}
+
+async fn ensure_kokoro_helper_started(app: &AppHandle) -> Result<(), String> {
+    if kokoro_helper_healthy().await {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let helper_dir = app_dir(app)?.join("kokoro-helper");
+        fs::create_dir_all(&helper_dir).map_err(|err| format!("Failed to create Kokoro helper folder: {err}"))?;
+        fs::write(helper_dir.join("kokoro_server.py"), KOKORO_SERVER_PY)
+            .map_err(|err| format!("Failed to write Kokoro server: {err}"))?;
+        fs::write(helper_dir.join("start-kokoro.ps1"), KOKORO_START_PS1)
+            .map_err(|err| format!("Failed to write Kokoro starter: {err}"))?;
+
+        let script = helper_dir.join("start-kokoro.ps1");
+        let helper_arg = helper_dir.to_string_lossy().to_string();
+        let script_arg = script.to_string_lossy().to_string();
+        let mut command = Command::new("powershell");
+        command.args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_arg,
+            "-Root",
+            &helper_arg,
+        ]);
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        command.spawn().map_err(|err| format!("Failed to start Kokoro helper: {err}"))?;
+
+        for _ in 0..90 {
+            if kokoro_helper_healthy().await {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        Err("Kokoro helper is still installing. Try Test voice again in a minute.".to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("Kokoro helper starts from the Windows app.".to_string())
+    }
+}
+
+async fn kokoro_helper_healthy() -> bool {
+    let Ok(client) = reqwest::Client::builder().timeout(Duration::from_millis(700)).build() else {
+        return false;
+    };
+    client
+        .get(format!("{KOKORO_HELPER_URL}/health"))
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+const KOKORO_START_PS1: &str = r#"
+param([string]$Root)
+$ErrorActionPreference = "Stop"
+
+New-Item -ItemType Directory -Force -Path $Root | Out-Null
+$UvDir = Join-Path $Root "uv"
+$UvExe = Join-Path $UvDir "uv.exe"
+$Venv = Join-Path $Root ".venv"
+$Server = Join-Path $Root "kokoro_server.py"
+$Model = Join-Path $Root "kokoro-v1.0.int8.onnx"
+$Voices = Join-Path $Root "voices-v1.0.bin"
+
+if (!(Test-Path $UvExe)) {
+  New-Item -ItemType Directory -Force -Path $UvDir | Out-Null
+  $Zip = Join-Path $Root "uv.zip"
+  Invoke-WebRequest -Uri "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" -OutFile $Zip
+  Expand-Archive -Path $Zip -DestinationPath $UvDir -Force
+  $Found = Get-ChildItem -Path $UvDir -Recurse -Filter "uv.exe" | Select-Object -First 1
+  if ($null -eq $Found) { throw "uv.exe was not found after download." }
+  Copy-Item $Found.FullName $UvExe -Force
+}
+
+if (!(Test-Path $Model)) {
+  Invoke-WebRequest -Uri "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx" -OutFile $Model
+}
+if (!(Test-Path $Voices)) {
+  Invoke-WebRequest -Uri "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin" -OutFile $Voices
+}
+
+if (!(Test-Path (Join-Path $Venv "Scripts\python.exe"))) {
+  & $UvExe venv $Venv --python 3.12 --seed
+}
+& $UvExe pip install --python (Join-Path $Venv "Scripts\python.exe") --upgrade kokoro-onnx soundfile
+& (Join-Path $Venv "Scripts\python.exe") $Server --root $Root --port 8765
+"#;
+
+#[cfg(target_os = "windows")]
+const KOKORO_SERVER_PY: &str = r#"
+import argparse
+import io
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import soundfile as sf
+from kokoro_onnx import Kokoro
+
+VOICE_MAP = {
+    "kokoro-default": "af_sarah",
+    "kokoro-warm": "af_heart",
+    "kokoro-clear": "am_adam",
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--root", required=True)
+parser.add_argument("--port", type=int, default=8765)
+args = parser.parse_args()
+
+root = Path(args.root)
+kokoro = Kokoro(str(root / "kokoro-v1.0.int8.onnx"), str(root / "voices-v1.0.bin"))
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        return
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/v1/audio/speech":
+            self.send_response(404)
+            self.end_headers()
+            return
+        length = int(self.headers.get("content-length", "0"))
+        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        text = (data.get("input") or "Hello from Kokoro.").strip()
+        voice = VOICE_MAP.get(data.get("voice"), "af_sarah")
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
+        audio = io.BytesIO()
+        sf.write(audio, samples, sample_rate, format="WAV")
+        payload = audio.getvalue()
+        self.send_response(200)
+        self.send_header("content-type", "audio/wav")
+        self.send_header("content-length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+"#;
 
 async fn speak_with_local_windows_voice(text: &str) -> Result<String, String> {
     #[cfg(target_os = "windows")]
