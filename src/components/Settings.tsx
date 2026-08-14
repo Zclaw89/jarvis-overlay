@@ -207,7 +207,7 @@ export function Settings() {
   const [brainMode, setBrainMode] = useState<BrainMode>('api')
   const [dockSide, setDockSide] = useState<DockSide>('right')
   const [dockY, setDockY] = useState(50)
-  const [bubbleTransparency, setBubbleTransparency] = useState(0)
+  const [bubbleTransparency, setBubbleTransparency] = useState(100)
   const [openAiVoiceKey, setOpenAiVoiceKey] = useState('')
   const [elevenLabsKey, setElevenLabsKey] = useState('')
   const [voiceTestStatus, setVoiceTestStatus] = useState('')
@@ -257,7 +257,7 @@ export function Settings() {
       if (v === 'left' || v === 'right' || v === 'auto') setDockSide(v)
     })
     invoke<string|null>('get_setting', { key:'ole_dock_y' }).then(v => v && setDockY(Math.max(0, Math.min(100, +v))))
-    invoke<string|null>('get_setting', { key:'ole_bubble_transparency' }).then(v => v && setBubbleTransparency(Math.max(0, Math.min(70, +v))))
+    invoke<string|null>('get_setting', { key:'ole_bubble_transparency' }).then(v => v && setBubbleTransparency(Math.max(40, Math.min(100, +v))))
     invoke<string|null>('get_language_mode').then(v => {
       if (v === 'auto' || v === 'en' || v === 'hi' || v === 'hinglish') setLanguageMode(v)
     })
@@ -416,7 +416,7 @@ export function Settings() {
 
       {/* Bubble */}
       <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
-        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Floating badge</label>
+        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>rail: left | right | auto</label>
         <div style={{ display:'flex', gap:10 }}>
           {(['left', 'right', 'auto'] as const).map(side => (
             <button key={side} type="button" onClick={() => {
@@ -434,8 +434,8 @@ export function Settings() {
           setDockY(next)
           saveBubbleSetting('ole_dock_y', String(next))
         }} style={{ width:'100%', accentColor:'var(--primary)', cursor:'pointer' }} />
-        <label style={{ fontSize:11, color:'var(--text-muted)' }}>Transparency — {Math.round(bubbleTransparency)}%</label>
-        <input type="range" min="0" max="70" step="1" value={bubbleTransparency} onChange={e => {
+        <label style={{ fontSize:11, color:'var(--text-muted)' }}>transparency 40–100% — {Math.round(bubbleTransparency)}%</label>
+        <input type="range" min="40" max="100" step="1" value={bubbleTransparency} onChange={e => {
           const next = +e.target.value
           setBubbleTransparency(next)
           saveBubbleSetting('ole_bubble_transparency', String(next))

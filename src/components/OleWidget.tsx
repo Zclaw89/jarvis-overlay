@@ -29,7 +29,7 @@ type DossierItem = {
   analysis?: string | null;
 };
 
-type OleMode = "OLE" | "REC" | "MIC" | "CAM";
+type OleMode = "OLE" | "SCREEN_RECORD" | "VOICE_RECORD" | "CUSTOM";
 
 const PLATE_WIDTH = 84;
 const PLATE_HEIGHT = 124;
@@ -133,7 +133,7 @@ export function OleWidget() {
     ]);
     const nextSide = side === "left" || side === "right" ? side : "right";
     const nextY = y ? Math.max(0, Math.min(100, Number(y))) : 50;
-    const nextTransparency = alpha ? Math.max(0, Math.min(70, Number(alpha))) : 0;
+    const nextTransparency = alpha ? Math.max(40, Math.min(100, Number(alpha))) : 100;
     setDockSide(nextSide);
     setDockY(nextY);
     setTransparency(nextTransparency);
@@ -248,7 +248,7 @@ export function OleWidget() {
   }
 
   function cycleMode(direction = 1) {
-    const modes: OleMode[] = ["OLE", "REC", "MIC", "CAM"];
+    const modes: OleMode[] = ["OLE", "SCREEN_RECORD", "VOICE_RECORD", "CUSTOM"];
     const index = modes.indexOf(mode);
     setMode(modes[(index + direction + modes.length) % modes.length]);
     setModeActive(false);
@@ -339,7 +339,7 @@ export function OleWidget() {
         <button
           className="ole-badge"
           aria-label="Drop an Olé"
-          style={{ opacity: 1 - transparency / 100 }}
+          style={{ opacity: transparency / 100 }}
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId);
             dragRef.current = { active: true, moved: false, lastY: event.screenY };

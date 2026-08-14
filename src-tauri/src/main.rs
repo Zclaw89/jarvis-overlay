@@ -757,7 +757,11 @@ fn create_dossier_item(note: String) -> Result<DossierMeta, String> {
         analysis: None,
     };
     write_dossier_meta(&item_dir, &meta)?;
-    write_android_compatible_dossier_files(&id, &meta, &captured_at, &screenshot_hash)?;
+    let metadata = serde_json::json!({
+        "capture_type": "screenshot",
+        "referring_app": meta.source_title.clone().unwrap_or_else(|| "UNVERIFIED".to_string()),
+    });
+    write_android_compatible_dossier_files(&id, &meta, &captured_at, &screenshot_hash, metadata)?;
     Ok(meta)
 }
 
@@ -766,51 +770,34 @@ fn write_android_compatible_dossier_files(
     meta: &DossierMeta,
     captured_at: &str,
     screenshot_hash: &str,
-) -> Result<(), String> {
-    write_android_compatible_dossier_files_with_mime(id, meta, captured_at, screenshot_hash, "image/png")
-}
-
-fn write_android_compatible_dossier_files_with_mime(
-    id: &str,
-    meta: &DossierMeta,
-    captured_at: &str,
-    screenshot_hash: &str,
-    mime: &str,
+    metadata: serde_json::Value,
 ) -> Result<(), String> {
     let root = dossier_root()?;
     fs::create_dir_all(root.join("ole_containers")).map_err(|err| format!("Failed to create ole_containers: {err}"))?;
     fs::create_dir_all(root.join("source_artifacts")).map_err(|err| format!("Failed to create source_artifacts: {err}"))?;
     fs::create_dir_all(root.join("ole_artifact_links")).map_err(|err| format!("Failed to create ole_artifact_links: {err}"))?;
-    let metadata = serde_json::json!({
-        "sourceTitle": meta.source_title.clone().unwrap_or_else(|| "UNVERIFIED".to_string()),
-        "sourceVerified": meta.source_title.is_some(),
-    });
     let container = serde_json::json!({
         "id": id,
-        "topic": meta.note,
+        "title": meta.note,
         "createdAt": captured_at,
     });
     let artifact = serde_json::json!({
         "id": id,
-        "containerId": id,
         "filePath": meta.screenshot_path,
         "sha256": screenshot_hash,
         "capturedAt": captured_at,
-        "mime": mime,
         "metadataJson": metadata.to_string(),
     });
     let link = serde_json::json!({
-        "id": format!("{id}-contains"),
         "containerId": id,
         "artifactId": id,
-        "linkedArtifactId": serde_json::Value::Null,
-        "linkType": "contains",
+        "linkedAt": captured_at,
     });
     fs::write(root.join("ole_containers").join(format!("{id}.json")), serde_json::to_string_pretty(&container).unwrap())
         .map_err(|err| format!("Failed to write ole_containers row: {err}"))?;
     fs::write(root.join("source_artifacts").join(format!("{id}.json")), serde_json::to_string_pretty(&artifact).unwrap())
         .map_err(|err| format!("Failed to write source_artifacts row: {err}"))?;
-    fs::write(root.join("ole_artifact_links").join(format!("{id}-contains.json")), serde_json::to_string_pretty(&link).unwrap())
+    fs::write(root.join("ole_artifact_links").join(format!("{id}.json")), serde_json::to_string_pretty(&link).unwrap())
         .map_err(|err| format!("Failed to write ole_artifact_links row: {err}"))
 }
 
@@ -883,7 +870,15 @@ fn import_dossier_file(file_name: String, mime: String, data_base64: String) -> 
         analysis: None,
     };
     write_dossier_meta(&item_dir, &meta)?;
-    write_android_compatible_dossier_files_with_mime(&id, &meta, &captured_at, &sha256, &mime)?;
+    let metadata = serde_json::json!({
+        "capture_type": "share",
+        "share_mime": mime,
+        "share_extra_text": "",
+        "referring_app": "UNVERIFIED",
+        "source_uri": "",
+        "received_at": captured_at,
+    });
+    write_android_compatible_dossier_files(&id, &meta, &captured_at, &sha256, metadata)?;
     Ok(meta)
 }
 
