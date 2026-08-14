@@ -1,4 +1,4 @@
-export interface MeshUtilityTheme {
+export interface OleTheme {
   id: string
   name: string
   dark: boolean
@@ -16,7 +16,7 @@ export interface MeshUtilityTheme {
   }
 }
 
-export const APPEARANCE_THEMES: MeshUtilityTheme[] = [
+export const APPEARANCE_THEMES: OleTheme[] = [
   {
     id: 'default',
     name: 'MeshPilot Default',
@@ -180,7 +180,7 @@ export const APPEARANCE_THEMES: MeshUtilityTheme[] = [
   },
 ]
 
-const STORAGE_KEY = 'meshutility-theme-id'
+const STORAGE_KEY = 'ole-theme-id'
 
 function hexToRgb(value: string) {
   const match = value.trim().match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i)

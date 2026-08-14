@@ -141,9 +141,9 @@ export function TitleBar({
       </div>
       <div className="title-center" data-tauri-drag-region>
         <span className="title-icon" data-tauri-drag-region>
-          <img src="/logo.png" alt="MP" data-tauri-drag-region />
+          <img src="/ole-badge.svg" alt="" data-tauri-drag-region />
         </span>
-        <strong className="title-text" data-tauri-drag-region>MeshPrompt</strong>
+        <strong className="title-text" data-tauri-drag-region>Olé</strong>
       </div>
       <div className="window-controls-right" data-tauri-drag-region>
         <button className="mac-dot minimize" data-no-drag onClick={(e) => { e.stopPropagation(); void appWindow.minimize(); }} aria-label="Minimize"></button>
@@ -225,7 +225,7 @@ export async function generateWithCurrentProvider(
     provider: providerDef,
     credentials: { apiKey: key ?? undefined, baseUrl: settings.provider.baseUrl },
     timeoutMs: settings.timeoutMs,
-    appName: "MeshPrompt",
+    appName: "Olé",
   });
   return client.generate({
     ...request.options,
@@ -242,5 +242,5 @@ export function errorMessage(error: unknown): string {
   }
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  return "MeshPrompt action failed.";
+  return "Olé action failed.";
 }

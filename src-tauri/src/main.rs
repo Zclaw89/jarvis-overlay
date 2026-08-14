@@ -9,7 +9,9 @@ mod engine;
 
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
+use std::collections::hash_map::DefaultHasher;
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
@@ -137,6 +139,18 @@ struct MailboxJobPayload {
     screenshot_path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DossierMeta {
+    id: String,
+    created_at: String,
+    note: String,
+    screenshot_path: String,
+    screenshot_hash: String,
+    source_title: Option<String>,
+    analysis: Option<String>,
+}
+
 fn default_settings() -> SettingsState {
     SettingsState {
         provider: ProviderSettings {
@@ -178,7 +192,47 @@ fn mailbox_root() -> Result<PathBuf, String> {
     let documents = dirs::document_dir()
         .or_else(dirs::home_dir)
         .ok_or_else(|| "Could not find the user's Documents folder.".to_string())?;
-    Ok(documents.join("JarvisMailbox"))
+    Ok(documents.join("OleMailbox"))
+}
+
+fn dossier_root() -> Result<PathBuf, String> {
+    let documents = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Could not find the user's Documents folder.".to_string())?;
+    Ok(documents.join("OleDossier"))
+}
+
+fn dossier_items_dir() -> Result<PathBuf, String> {
+    let dir = dossier_root()?.join("items");
+    fs::create_dir_all(&dir).map_err(|err| format!("Failed to create dossier folder: {err}"))?;
+    Ok(dir)
+}
+
+fn new_dossier_item_id() -> String {
+    format!(
+        "ole-{}-{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S%3f"),
+        std::process::id()
+    )
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
+fn read_dossier_meta(path: &std::path::Path) -> Result<DossierMeta, String> {
+    let raw = fs::read_to_string(path).map_err(|err| format!("Failed to read dossier metadata: {err}"))?;
+    serde_json::from_str(&raw).map_err(|err| format!("Failed to parse dossier metadata: {err}"))
+}
+
+fn write_dossier_meta(item_dir: &std::path::Path, meta: &DossierMeta) -> Result<(), String> {
+    fs::write(
+        item_dir.join("meta.json"),
+        serde_json::to_string_pretty(meta).map_err(|err| format!("Failed to encode dossier metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write dossier metadata: {err}"))
 }
 
 fn ensure_mailbox_dirs_at(root: &std::path::Path) -> Result<(PathBuf, PathBuf), String> {
@@ -547,7 +601,7 @@ fn open_widget_chat(app: AppHandle) -> Result<(), String> {
         .set_ignore_cursor_events(false)
         .map_err(|err| format!("Failed to enable widget clicks: {err}"))?;
     show_widget_window(&app)?;
-    app.emit("jarvis://open-chat", ()).map_err(|err| format!("Failed to open chat: {err}"))
+    app.emit("ole://open-chat", ()).map_err(|err| format!("Failed to open chat: {err}"))
 }
 
 #[tauri::command]
@@ -681,6 +735,70 @@ fn read_mailbox_reply(job_id: String) -> Result<Option<String>, String> {
     read_mailbox_reply_at(&mailbox_root()?, &job_id)
 }
 
+#[tauri::command]
+fn create_dossier_item(note: String) -> Result<DossierMeta, String> {
+    let id = new_dossier_item_id();
+    let item_dir = dossier_items_dir()?.join(&id);
+    fs::create_dir_all(&item_dir).map_err(|err| format!("Failed to create dossier item: {err}"))?;
+    let screenshot_path = item_dir.join("screenshot.png");
+    capture_screenshot_to_file(&screenshot_path)?;
+    let screenshot_bytes = fs::read(&screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
+    let source_title = foreground_window_title();
+    let meta = DossierMeta {
+        id,
+        created_at: chrono::Utc::now().to_rfc3339(),
+        note,
+        screenshot_path: screenshot_path.to_string_lossy().to_string(),
+        screenshot_hash: hash_bytes(&screenshot_bytes),
+        source_title,
+        analysis: None,
+    };
+    write_dossier_meta(&item_dir, &meta)?;
+    Ok(meta)
+}
+
+#[tauri::command]
+fn list_dossier_items() -> Result<Vec<DossierMeta>, String> {
+    let dir = dossier_items_dir()?;
+    let mut items = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|err| format!("Failed to read dossier folder: {err}"))? {
+        let entry = entry.map_err(|err| format!("Failed to read dossier item: {err}"))?;
+        let meta_path = entry.path().join("meta.json");
+        if meta_path.exists() {
+            if let Ok(meta) = read_dossier_meta(&meta_path) {
+                items.push(meta);
+            }
+        }
+    }
+    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(items)
+}
+
+#[tauri::command]
+fn attach_dossier_analysis(id: String, analysis: String) -> Result<(), String> {
+    let safe_id = id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid dossier item id.".to_string());
+    }
+    let item_dir = dossier_items_dir()?.join(safe_id);
+    let meta_path = item_dir.join("meta.json");
+    let mut meta = read_dossier_meta(&meta_path)?;
+    meta.analysis = Some(analysis);
+    write_dossier_meta(&item_dir, &meta)
+}
+
+#[tauri::command]
+fn read_dossier_screenshot_base64(id: String) -> Result<String, String> {
+    let safe_id = id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid dossier item id.".to_string());
+    }
+    let meta = read_dossier_meta(&dossier_items_dir()?.join(safe_id).join("meta.json"))?;
+    let bytes = fs::read(meta.screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
 fn capture_screenshot_to_file(path: &std::path::Path) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -703,6 +821,27 @@ fn capture_screenshot_to_file(path: &std::path::Path) -> Result<(), String> {
     {
         let _ = path;
         Err("Screenshot capture is available in the Windows app.".to_string())
+    }
+}
+
+fn foreground_window_title() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "$sig='[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);'; Add-Type -MemberDefinition $sig -Name Native -Namespace Win32; $b=New-Object System.Text.StringBuilder 512; $h=[Win32.Native]::GetForegroundWindow(); [void][Win32.Native]::GetWindowText($h,$b,$b.Capacity); $b.ToString()";
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if title.is_empty() { None } else { Some(title) }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
     }
 }
 
@@ -745,7 +884,7 @@ async fn synthesize_kokoro_tts(app: &AppHandle, voice_id: &str, text: &str) -> R
     };
 
     match helper_result {
-        Ok(bytes) => play_audio_bytes("jarvis-kokoro.wav", &bytes).await.map(|_| "Kokoro voice test played.".to_string()),
+        Ok(bytes) => play_audio_bytes("ole-kokoro.wav", &bytes).await.map(|_| "Kokoro voice test played.".to_string()),
         Err(err) => {
             let fallback = speak_with_local_windows_voice(text).await?;
             Ok(format!("Kokoro helper was not ready ({err}). {fallback}"))
@@ -982,7 +1121,7 @@ async fn synthesize_openai_tts(api_key: &str, voice_id: &str, text: &str) -> Res
         .bytes()
         .await
         .map_err(|err| format!("OpenAI voice response failed: {err}"))?;
-    play_audio_bytes("jarvis-openai-tts.mp3", &bytes).await
+    play_audio_bytes("ole-openai-tts.mp3", &bytes).await
 }
 
 async fn synthesize_elevenlabs_tts(api_key: &str, voice_id: &str, text: &str) -> Result<String, String> {
@@ -1008,7 +1147,7 @@ async fn synthesize_elevenlabs_tts(api_key: &str, voice_id: &str, text: &str) ->
         .bytes()
         .await
         .map_err(|err| format!("ElevenLabs voice response failed: {err}"))?;
-    play_audio_bytes("jarvis-elevenlabs-tts.mp3", &bytes).await
+    play_audio_bytes("ole-elevenlabs-tts.mp3", &bytes).await
 }
 
 async fn play_audio_bytes(filename: &str, bytes: &[u8]) -> Result<String, String> {
@@ -1107,7 +1246,7 @@ fn ensure_autostart_enabled() {
         "add",
         r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
         "/v",
-        "MeshUtility",
+        "Olé",
         "/t",
         "REG_SZ",
         "/d",
@@ -1139,7 +1278,7 @@ fn set_launch_at_startup(_app: &AppHandle, enabled: bool) -> Result<(), String> 
                 "add",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/v",
-                "MeshUtility",
+                "Olé",
                 "/t",
                 "REG_SZ",
                 "/d",
@@ -1151,7 +1290,7 @@ fn set_launch_at_startup(_app: &AppHandle, enabled: bool) -> Result<(), String> 
                 "delete",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/v",
-                "MeshUtility",
+                "Olé",
                 "/f",
             ]);
         }
@@ -1211,6 +1350,54 @@ fn show_widget_window(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "Widget window is unavailable.".to_string())?;
     widget.show().map_err(|err| format!("Failed to show widget: {err}"))?;
     Ok(())
+}
+
+#[tauri::command]
+fn dock_ole_widget(app: AppHandle, side: String, vertical: f64) -> Result<(), String> {
+    dock_widget_to_edge(&app, &side, vertical)
+}
+
+#[tauri::command]
+fn snap_ole_widget_to_edge(app: AppHandle, side: String) -> Result<f64, String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    let monitor = widget.current_monitor()
+        .map_err(|err| format!("Failed to read widget monitor: {err}"))?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "No monitor found for widget.".to_string())?;
+    let area = monitor.work_area();
+    let size = widget.outer_size().map_err(|err| format!("Failed to read widget size: {err}"))?;
+    let pos = widget.outer_position().map_err(|err| format!("Failed to read widget position: {err}"))?;
+    let max_y = area.size.height.saturating_sub(size.height).max(1);
+    let relative_y = pos.y.saturating_sub(area.position.y) as f64;
+    let vertical = ((relative_y / max_y as f64) * 100.0).clamp(0.0, 100.0);
+    dock_widget_to_edge(&app, &side, vertical)?;
+    db::set_setting("ole_dock_y".to_string(), format!("{vertical:.0}"));
+    Ok(vertical)
+}
+
+fn dock_widget_to_edge(app: &AppHandle, side: &str, vertical: f64) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    let monitor = widget.current_monitor()
+        .map_err(|err| format!("Failed to read widget monitor: {err}"))?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "No monitor found for widget.".to_string())?;
+    let area = monitor.work_area();
+    let size = widget.outer_size().unwrap_or_else(|_| tauri::PhysicalSize::new(84, 124));
+    let margin = 8_i32;
+    let x = if side == "left" {
+        area.position.x + margin
+    } else {
+        area.position.x + area.size.width.saturating_sub(size.width) as i32 - margin
+    };
+    let max_y = area.size.height.saturating_sub(size.height);
+    let y = area.position.y + ((max_y as f64) * (vertical.clamp(0.0, 100.0) / 100.0)) as i32;
+    widget
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|err| format!("Failed to dock Olé badge: {err}"))
 }
 
 #[tauri::command]
@@ -1592,12 +1779,12 @@ fn reregister_global_shortcut(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> {
     let client = reqwest::Client::builder()
-        .user_agent("MeshPilot-Updater")
+        .user_agent("Ole-Updater")
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
     let res = client
-        .get("https://api.github.com/repos/MeshPilot-in/MeshUtility/releases")
+        .get("https://api.github.com/repos/Zclaw89/jarvis-overlay/releases")
         .send()
         .await;
 
@@ -1622,7 +1809,7 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
     }
 
     if use_fallback {
-        let fallback_url = "https://raw.githubusercontent.com/MeshPilot-in/MeshUtility/main/latest-version.json";
+        let fallback_url = "https://raw.githubusercontent.com/Zclaw89/jarvis-overlay/main/latest-version.json";
         let fb_res = client
             .get(fallback_url)
             .send()
@@ -1657,17 +1844,17 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
 
     let releases_arr = releases.as_array().ok_or("Invalid releases list")?;
 
-    let mut meshutility_release = None;
+    let mut ole_release = None;
     for rel in releases_arr {
         if let Some(tag) = rel["tag_name"].as_str() {
-            if tag.to_lowercase().starts_with("meshutility-") || tag.to_lowercase().starts_with("meshpilot-") {
-                meshutility_release = Some(rel);
+            if tag.to_lowercase().starts_with("ole-") || tag.to_lowercase().starts_with("ole-") {
+                ole_release = Some(rel);
                 break;
             }
         }
     }
 
-    let release = meshutility_release.or_else(|| {
+    let release = ole_release.or_else(|| {
         releases_arr.first().map(|r| r)
     }).ok_or("No releases found")?;
 
@@ -1682,7 +1869,7 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
         for asset in assets {
             if let Some(name) = asset["name"].as_str() {
                 let name_lower = name.to_lowercase();
-                if (name_lower.ends_with(".msi") || name_lower.ends_with(".exe")) && (name_lower.contains("meshutility") || name_lower.contains("meshpilot")) {
+                if (name_lower.ends_with(".msi") || name_lower.ends_with(".exe")) && (name_lower.contains("ole") || name_lower.contains("meshpilot")) {
                     if let Some(url) = asset["browser_download_url"].as_str() {
                         download_url = url.to_string();
                         break;
@@ -1747,7 +1934,7 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("MeshPilot-Updater")
+        .user_agent("Ole-Updater")
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -1765,7 +1952,7 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
     
     let temp_dir = std::env::temp_dir();
     let is_msi = download_url.to_lowercase().ends_with(".msi");
-    let file_name = if is_msi { "meshutility-setup.msi" } else { "meshutility-setup.exe" };
+    let file_name = if is_msi { "ole-setup.msi" } else { "ole-setup.exe" };
     let installer_path = temp_dir.join(file_name);
 
     fs::write(&installer_path, bytes).map_err(|e| format!("Failed to write installer file: {e}"))?;
@@ -1821,7 +2008,7 @@ mod tests {
     #[test]
     fn mailbox_write_job_and_read_reply_marks_done() {
         let root = std::env::temp_dir().join(format!(
-            "jarvis-mailbox-test-{}-{}",
+            "ole-mailbox-test-{}-{}",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
         ));
@@ -1870,8 +2057,7 @@ fn main() {
 
             // ── Auth Deep Link protocol scheme ──
             use tauri_plugin_deep_link::DeepLinkExt;
-            let _ = app.deep_link().register("meshvoice");
-            let _ = app.deep_link().register("meshprompt");
+            let _ = app.deep_link().register("ole");
 
 
             let (saved_mode, saved_hotkey, saved_model_file, saved_language_mode) = {
@@ -2028,13 +2214,13 @@ fn main() {
 
             // ── Consolidated System Tray ──
             {
-                let title_i = MenuItem::with_id(app, "title", format!("MeshUtility Suite v{}", env!("CARGO_PKG_VERSION")), false, None::<&str>)?;
-                let open_chat = MenuItem::with_id(app, "open_chat", "Open Jarvis Chat", true, None::<&str>)?;
-                let open_voice = MenuItem::with_id(app, "open_voice", "Open Dictation Suite", true, None::<&str>)?;
-                let open_prompt = MenuItem::with_id(app, "open_prompt", "Open Prompt Enhancer", true, None::<&str>)?;
-                let open_overlay = MenuItem::with_id(app, "open_overlay", "Open Prompt Overlay", true, None::<&str>)?;
+                let title_i = MenuItem::with_id(app, "title", format!("Olé v{}", env!("CARGO_PKG_VERSION")), false, None::<&str>)?;
+                let open_chat = MenuItem::with_id(app, "open_chat", "Open Olé Chat", true, None::<&str>)?;
+                let open_voice = MenuItem::with_id(app, "open_voice", "Open Olé", true, None::<&str>)?;
+                let open_prompt = MenuItem::with_id(app, "open_prompt", "Open AI Tools", true, None::<&str>)?;
+                let open_overlay = MenuItem::with_id(app, "open_overlay", "Open Text Overlay", true, None::<&str>)?;
                 let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-                let quit = MenuItem::with_id(app, "quit", "Quit Suite", true, Some("Ctrl+Q"))?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Olé", true, Some("Ctrl+Q"))?;
                 let separator_1 = PredefinedMenuItem::separator(app)?;
                 let separator_2 = PredefinedMenuItem::separator(app)?;
                 let menu = Menu::with_items(app, &[
@@ -2050,7 +2236,7 @@ fn main() {
                 ])?;
                 let mut tray_builder = TrayIconBuilder::new()
                     .menu(&menu)
-                    .tooltip("MeshUtility Suite - running in tray")
+                    .tooltip("Olé - running in tray")
                     .show_menu_on_left_click(false)
                     .on_tray_icon_event(|tray, event| {
                         if let tauri::tray::TrayIconEvent::Click {
@@ -2131,6 +2317,8 @@ fn main() {
             hide_widget,
             open_widget_chat,
             set_widget_click_through,
+            dock_ole_widget,
+            snap_ole_widget_to_edge,
             set_widget_enabled,
             get_language_mode,
             set_language_mode,
@@ -2155,6 +2343,10 @@ fn main() {
             get_mailbox_paths,
             create_mailbox_job,
             read_mailbox_reply,
+            create_dossier_item,
+            list_dossier_items,
+            attach_dossier_analysis,
+            read_dossier_screenshot_base64,
             test_voice,
             check_for_updates,
             install_update,

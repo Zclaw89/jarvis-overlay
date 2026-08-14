@@ -22,14 +22,9 @@ interface MicrophoneStatus {
   error: string | null
 }
 
-type WidgetStyle = 'pill' | 'circle' | 'invisible'
 type VoiceEngine = 'kokoro' | 'openai' | 'elevenlabs' | 'edge'
 type BrainMode = 'api' | 'mailbox'
-
-const WIDGET_STYLE_OPTIONS: { value: WidgetStyle; label: string }[] = [
-  { value: 'pill', label: 'Standard Pill' },
-  { value: 'circle', label: 'Circular Logo' },
-]
+type DockSide = 'left' | 'right'
 
 const VOICE_OPTIONS: Record<VoiceEngine, { id: string; label: string }[]> = {
   kokoro: [
@@ -49,65 +44,6 @@ const VOICE_OPTIONS: Record<VoiceEngine, { id: string; label: string }[]> = {
   edge: [
     { id: 'edge-default', label: 'Windows default' },
   ],
-}
-
-function WidgetStylePreview({ style }: { style: WidgetStyle }) {
-  const isCircle = style === 'circle'
-  const isInvisible = style === 'invisible'
-  const width = isCircle ? 32 : 122
-
-  return (
-    <div style={{
-      height: 58,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderRadius: 8,
-      background: isInvisible
-        ? 'linear-gradient(135deg, rgba(255,255,255,0.10) 0 25%, transparent 25% 50%, rgba(255,255,255,0.08) 50% 75%, transparent 75%), #202631'
-        : 'rgba(0,0,0,0.12)',
-      backgroundSize: isInvisible ? '18px 18px' : undefined,
-      marginBottom: 10,
-      overflow: 'hidden',
-    }}>
-      <div style={{
-        width,
-        height: 32,
-        borderRadius: 99,
-        border: `0.5px solid ${isInvisible ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.14)'}`,
-        background: isInvisible
-          ? 'linear-gradient(135deg, rgba(255,255,255,0.13), rgba(255,255,255,0.04) 42%, rgba(255,255,255,0.08)), rgba(12,12,12,0.42)'
-          : 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05) 38%, rgba(255,255,255,0.09)), rgba(13,13,13,0.72)',
-        backdropFilter: isInvisible ? 'blur(18px) saturate(150%)' : 'blur(22px) saturate(165%)',
-        WebkitBackdropFilter: isInvisible ? 'blur(18px) saturate(150%)' : 'blur(22px) saturate(165%)',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.22), inset 0 -1px 0 rgba(0,0,0,0.34), inset 0 0 16px rgba(255,255,255,0.08)',
-        clipPath: 'inset(0 round 999px)',
-        isolation: 'isolate',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: isCircle ? 0 : 6,
-        padding: isCircle ? 0 : '0 10px',
-        overflow: 'hidden',
-        flexShrink: 0,
-      }}>
-        <img src="/logo-prompt.png" alt="" width="16" height="16" style={{ borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} />
-        {!isCircle && (
-          <span style={{
-            color: isInvisible ? '#F3EEE6' : '#B8B3AA',
-            fontSize: 11,
-            fontWeight: 550,
-            letterSpacing: '0.02em',
-            fontFamily: "'Noto Sans',sans-serif",
-            textShadow: '0 1px 2px rgba(0,0,0,0.55)',
-            whiteSpace: 'nowrap',
-          }}>
-            MeshUtility
-          </span>
-        )}
-      </div>
-    </div>
-  )
 }
 
 // ─── HotkeyRecorder ────────────────────────────────────────────────────────
@@ -266,10 +202,12 @@ export function Settings() {
   const [micStatus, setMicStatus] = useState<MicrophoneStatus | null>(null)
   const [memoryWorkspacePath, setMemoryWorkspacePath] = useState('')
   const [widgetEnabled, setWidgetEnabled] = useState(true)
-  const [widgetStyle, setWidgetStyle] = useState<WidgetStyle>('pill')
   const [voiceEngine, setVoiceEngine] = useState<VoiceEngine>('kokoro')
   const [voiceId, setVoiceId] = useState('kokoro-default')
   const [brainMode, setBrainMode] = useState<BrainMode>('api')
+  const [dockSide, setDockSide] = useState<DockSide>('right')
+  const [dockY, setDockY] = useState(50)
+  const [bubbleTransparency, setBubbleTransparency] = useState(0)
   const [openAiVoiceKey, setOpenAiVoiceKey] = useState('')
   const [elevenLabsKey, setElevenLabsKey] = useState('')
   const [voiceTestStatus, setVoiceTestStatus] = useState('')
@@ -306,9 +244,6 @@ export function Settings() {
     invoke<string|null>('get_setting', { key:'widget_enabled' }).then(v => {
       setWidgetEnabled(v == null || (v !== 'false' && v !== '0'))
     })
-    invoke<string|null>('get_setting', { key:'widget_style' }).then(v => {
-      if (v === 'pill' || v === 'circle') setWidgetStyle(v)
-    })
     invoke<string|null>('get_setting', { key:'voice_engine' }).then(v => {
       if (v === 'kokoro' || v === 'openai' || v === 'elevenlabs' || v === 'edge') setVoiceEngine(v)
     })
@@ -318,6 +253,11 @@ export function Settings() {
     invoke<string|null>('get_setting', { key:'brain_mode' }).then(v => {
       if (v === 'api' || v === 'mailbox') setBrainMode(v)
     })
+    invoke<string|null>('get_setting', { key:'ole_dock_side' }).then(v => {
+      if (v === 'left' || v === 'right') setDockSide(v)
+    })
+    invoke<string|null>('get_setting', { key:'ole_dock_y' }).then(v => v && setDockY(Math.max(0, Math.min(100, +v))))
+    invoke<string|null>('get_setting', { key:'ole_bubble_transparency' }).then(v => v && setBubbleTransparency(Math.max(0, Math.min(70, +v))))
     invoke<string|null>('get_language_mode').then(v => {
       if (v === 'auto' || v === 'en' || v === 'hi' || v === 'hinglish') setLanguageMode(v)
     })
@@ -367,10 +307,12 @@ export function Settings() {
       invoke('set_setting', { key:'sensitivity', value: String(sensitivity) }),
       invoke('set_setting', { key:'memory_workspace_path', value: memoryWorkspacePath }),
       invoke('set_widget_enabled', { enabled: widgetEnabled }),
-      invoke('set_setting', { key:'widget_style', value: widgetStyle }),
       invoke('set_setting', { key:'voice_engine', value: voiceEngine }),
       invoke('set_setting', { key:'voice_id', value: voiceId }),
       invoke('set_setting', { key:'brain_mode', value: brainMode }),
+      invoke('set_setting', { key:'ole_dock_side', value: dockSide }),
+      invoke('set_setting', { key:'ole_dock_y', value: String(dockY) }),
+      invoke('set_setting', { key:'ole_bubble_transparency', value: String(bubbleTransparency) }),
       invoke('reregister_hotkey', { newHotkey: hotkey }).catch(() => {}),
     ])
     if (apiKey.trim()) await invoke('save_provider_key', { provider: 'groq', apiKey: apiKey.trim() })
@@ -391,6 +333,12 @@ export function Settings() {
     invoke('set_setting', { key:'brain_mode', value: mode }).catch(console.error)
   }
 
+  const saveBubbleSetting = (key: string, value: string) => {
+    invoke('set_setting', { key, value })
+      .then(() => emit('ole-bubble-settings-changed'))
+      .catch(console.error)
+  }
+
   const selectedPaidVoiceMissingKey =
     (voiceEngine === 'openai' && !openAiVoiceKey.trim()) ||
     (voiceEngine === 'elevenlabs' && !elevenLabsKey.trim())
@@ -409,7 +357,7 @@ export function Settings() {
         request: {
           engine: engineToUse,
           voiceId,
-          text: 'Hello, I am Jarvis. Voice is ready.',
+          text: 'Hello, I am Olé. Voice is ready.',
         },
       })
       setVoiceTestStatus(selectedPaidVoiceMissingKey ? `${result} Add a key to use the paid voice.` : result)
@@ -466,6 +414,34 @@ export function Settings() {
               alert(`Could not register hotkey ${combo}. It might be reserved by another app (e.g. PowerToys uses Alt+Space). Error: ${e}`);
             });
         }} />
+      </section>
+
+      {/* Bubble */}
+      <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
+        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Floating badge</label>
+        <div style={{ display:'flex', gap:10 }}>
+          {(['left', 'right'] as const).map(side => (
+            <button key={side} type="button" onClick={() => {
+              setDockSide(side)
+              saveBubbleSetting('ole_dock_side', side)
+            }} style={{ flex:1, padding:'14px 16px', borderRadius:10, textAlign:'left', cursor:'pointer', background: dockSide===side ? 'color-mix(in oklab, var(--primary) 12%, var(--surface))' : 'var(--surface)', border:`1.5px solid ${dockSide===side ? 'var(--primary)' : 'var(--border)'}`, fontFamily:"'Noto Sans',sans-serif" }}>
+              <div style={{ fontSize:13, fontWeight:600, color: dockSide===side ? 'var(--primary)' : 'var(--text)' }}>Dock {side}</div>
+              <div style={{ fontSize:12, color:'var(--text-muted)' }}>Keep the badge on the {side} edge.</div>
+            </button>
+          ))}
+        </div>
+        <label style={{ fontSize:11, color:'var(--text-muted)' }}>Vertical position — {Math.round(dockY)}%</label>
+        <input type="range" min="0" max="100" step="1" value={dockY} onChange={e => {
+          const next = +e.target.value
+          setDockY(next)
+          saveBubbleSetting('ole_dock_y', String(next))
+        }} style={{ width:'100%', accentColor:'var(--primary)', cursor:'pointer' }} />
+        <label style={{ fontSize:11, color:'var(--text-muted)' }}>Transparency — {Math.round(bubbleTransparency)}%</label>
+        <input type="range" min="0" max="70" step="1" value={bubbleTransparency} onChange={e => {
+          const next = +e.target.value
+          setBubbleTransparency(next)
+          saveBubbleSetting('ole_bubble_transparency', String(next))
+        }} style={{ width:'100%', accentColor:'var(--primary)', cursor:'pointer' }} />
       </section>
 
       {/* Brain */}
@@ -550,23 +526,6 @@ export function Settings() {
         </button>
       </section>
 
-      {/* Widget Style */}
-      <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
-        <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Widget Style</label>
-        <div style={{ display:'flex', gap:10 }}>
-          {WIDGET_STYLE_OPTIONS.map(opt => (
-            <button key={opt.value} onClick={async () => {
-              setWidgetStyle(opt.value)
-              await invoke('set_setting', { key: 'widget_style', value: opt.value })
-              await emit('widget-style-changed', opt.value).catch(console.error)
-            }} type="button" aria-pressed={widgetStyle === opt.value} style={{ flex:1, padding:'12px', borderRadius:10, textAlign:'left', cursor:'pointer', transition:'all 0.15s', background: widgetStyle===opt.value ? 'color-mix(in oklab, var(--primary) 12%, var(--surface))' : 'var(--surface)', border:`1.5px solid ${widgetStyle===opt.value ? 'var(--primary)' : 'var(--border)'}`, boxShadow: widgetStyle===opt.value ? '0 0 0 1px var(--primary)' : 'none', fontFamily:"'Noto Sans',sans-serif" }}>
-              <WidgetStylePreview style={opt.value} />
-              <div style={{ fontSize:13, fontWeight:600, color: widgetStyle===opt.value ? 'var(--primary)' : 'var(--text)', textAlign:'center', transition:'color 0.15s' }}>{opt.label}</div>
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* Voice */}
       <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
         <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Assistant voice</label>
@@ -615,7 +574,7 @@ export function Settings() {
         )}
 
         {voiceTestStatus && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>{voiceTestStatus}</p>}
-        {selectedPaidVoiceMissingKey && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>No paid voice key yet. Jarvis will fall back to Local (Kokoro).</p>}
+        {selectedPaidVoiceMissingKey && <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>No paid voice key yet. Olé will fall back to Local (Kokoro).</p>}
       </section>
 
       {/* Language Mode */}

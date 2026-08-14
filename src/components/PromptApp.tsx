@@ -246,7 +246,7 @@ export function MainApp({
           <div className="card-heading" style={{ marginBottom: '16px' }}>
             <div>
               <span className="eyebrow" style={{ color: 'var(--text-accent)' }}>New Version Released</span>
-              <h3>MeshPrompt {updateInfo.version}</h3>
+              <h3>Olé {updateInfo.version}</h3>
             </div>
           </div>
           
@@ -283,10 +283,10 @@ export function MainApp({
           <aside className="sidebar">
             <div className="brand-block">
               <div className="brand-mark">
-                <img src="/logo-prompt.png" alt="MP" />
+                <img src="/ole-badge.svg" alt="" />
               </div>
               <div>
-                <h1 className="brand-name">MeshPrompt</h1>
+                <h1 className="brand-name">Olé</h1>
               </div>
             </div>
             <nav>
@@ -427,10 +427,10 @@ export function MainApp({
         <aside className="sidebar">
           <div className="brand-block">
             <div className="brand-mark">
-              <img src="/logo.png" alt="MP" />
+              <img src="/ole-badge.svg" alt="" />
             </div>
             <div>
-              <h1 className="brand-name">MeshPrompt</h1>
+              <h1 className="brand-name">Olé</h1>
             </div>
           </div>
           <nav>
@@ -763,7 +763,7 @@ export function OverlayApp() {
       <div className="overlay-card">
         <div className="overlay-top" data-tauri-drag-region>
           <div data-tauri-drag-region>
-            <span className="eyebrow" data-tauri-drag-region>MESHUTILITY</span>
+            <span className="eyebrow" data-tauri-drag-region>OLÉ</span>
             <h2 
               data-tauri-drag-region 
               style={{ 

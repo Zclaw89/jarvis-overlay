@@ -1,8 +1,8 @@
 [package]
-name = "meshutility"
+name = "ole"
 version = "1.0.10"
-description = "A native dictation app"
-authors = ["MeshPilot"]
+description = "Olé desktop companion"
+authors = ["Olé"]
 license = "Apache-2.0"
 edition = "2021"
 
@@ -32,6 +32,7 @@ once_cell = "1"
 futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
+base64 = "0.22"
 # In-process speech engine (same crate Handy uses). Keeps the model loaded in
 # memory and runs inference in-process instead of spawning a subprocess that
 # reloads the model from disk on every dictation.

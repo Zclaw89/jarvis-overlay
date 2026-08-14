@@ -1,6 +1,6 @@
-# MeshUtility Jarvis v1
+# Olé desktop
 
-Small Windows desktop orb built on this MeshUtility Tauri 2 + React app. It stays on top, opens a compact Jarvis chat from the orb/tray/hotkey, and keeps API keys in the app's secure key store.
+Windows desktop twin of the Android Olé app.
 
 ## Run in dev
 
@@ -8,16 +8,6 @@ Small Windows desktop orb built on this MeshUtility Tauri 2 + React app. It stay
 npm install
 npm run tauri dev
 ```
-
-## Paste API keys
-
-Open **Settings > API Keys** for chat keys such as OpenAI, Anthropic, Gemini, Groq, or local Ollama URL.
-
-Open **Settings > Voice & Hotkey** for voice. **Local (Kokoro)** is the default and uses this PC. On first speak, the Windows app downloads and starts its Kokoro helper automatically. No Python install is required.
-
-If the Kokoro helper is still downloading, Jarvis uses the PC's Windows voice once and tries Kokoro again next time. OpenAI and ElevenLabs only run after you select them and save a key.
-
-Use the **Brain** picker for **API key (fast)** or **Zeus mailbox (screenshot + wait)**. The mailbox is plain files under `Documents\JarvisMailbox\inbox` and `Documents\JarvisMailbox\outbox`. “Analyze this” takes a normal screenshot, writes an inbox job, and waits for Zeus to write `reply.txt` or `reply.md` in that job’s outbox folder.
 
 ## Build the Windows app
 
@@ -27,14 +17,25 @@ Run this on the Windows PC that will build the `.exe`:
 npm run tauri build
 ```
 
-The NSIS installer is written under `src-tauri/target/release/bundle/nsis/`. This Linux VM does not produce or sign a Windows installer.
+The NSIS installer is named Olé and is written under `src-tauri/target/release/bundle/nsis/`. This Linux VM does not produce or sign a Windows installer.
 
-## Not done in v1
+## Settings
 
-- Wake word
-- Login/accounts
-- Computer-use agent actions
-- Signed Windows installer
+- **API Keys**: paste OpenAI or another supported chat key for fast analysis.
+- **Voice & Hotkey**: Local (Kokoro) is the default. First speak downloads the Kokoro helper automatically; no Python install is required. OpenAI and ElevenLabs only run after you select them and save a key.
+- **Floating badge**: choose left/right dock, vertical position, and transparency.
+
+## Drop an Olé
+
+Click or long-press the docked badge to take a normal screenshot and save a local Living Dossier item under `Documents\OleDossier\items`.
+
+If an API key is present, Olé adds a short structured analysis to the item. If not, the capture is saved and analysis waits for a key.
+
+Windows does not have Android's share sheet. On desktop, use Drop an Olé; Android remains the share door.
+
+## Not in v1
+
+Wake word, login/accounts, computer-use clicking, signed installer, always-on screen recorder, phone DRM metadata, ping-pong bounce, full patent graph/DAG orchestration.
 
 ## License
 

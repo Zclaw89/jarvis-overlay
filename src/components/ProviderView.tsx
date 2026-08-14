@@ -75,7 +75,7 @@ export function ProviderView(props: {
         provider,
         credentials: { apiKey: key ?? undefined, baseUrl: state.settings.provider.baseUrl },
         timeoutMs: Math.min(state.settings.timeoutMs, 20_000),
-        appName: "MeshPrompt",
+        appName: "Olé",
       });
 
       await client.generate({
@@ -109,7 +109,7 @@ export function ProviderView(props: {
   }
 
   function getProviderIcon(id: string) {
-    let src = "/logo-prompt.png";
+    let src = "/ole-badge.svg";
     switch (id) {
       case "xai":
         src = "/xai_logo.svg";

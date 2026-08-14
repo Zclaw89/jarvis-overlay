@@ -58,8 +58,8 @@ export function VersionWidget() {
   return (
     <div className="utility-version-widget">
       <div className="utility-version-widget-head">
-        <img src="/logo-prompt.png" alt="" width="22" height="22" />
-        <span className="utility-version-widget-name">MeshUtility</span>
+        <img src="/ole-badge.svg" alt="" width="22" height="22" />
+        <span className="utility-version-widget-name">Olé</span>
         <span className="utility-version-chip">v{version || '—'}</span>
       </div>
       <div className={`utility-engine-card ${engine}`}>

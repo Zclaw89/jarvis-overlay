@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { Bot, Send, Settings, X } from "lucide-react";
+import { Send, Settings, X } from "lucide-react";
 import { getMeshPromptProvider, MeshPromptClient } from "../lib";
 import { fallbackSettings, type AppState, type SettingsState } from "./PromptCommon";
 import type { MeshPromptMessage } from "../lib/types";
@@ -19,7 +19,18 @@ type MailboxJob = {
   screenshotPath?: string | null;
 };
 
-const ORB_SIZE = 76;
+type DossierItem = {
+  id: string;
+  createdAt: string;
+  note: string;
+  screenshotPath: string;
+  screenshotHash: string;
+  sourceTitle?: string | null;
+  analysis?: string | null;
+};
+
+const PLATE_WIDTH = 84;
+const PLATE_HEIGHT = 124;
 const CHAT_WIDTH = 360;
 const CHAT_HEIGHT = 500;
 const SCREEN_REQUEST_PATTERN = /\b(analy[sz]e this|look at this|what'?s on my screen|what is on my screen|my screen|this screen|screenshot)\b/i;
@@ -33,18 +44,24 @@ function shortProviderLabel(settings: SettingsState) {
   }
 }
 
-export function JarvisWidget() {
+export function OleWidget() {
   const appWindowRef = useRef<ReturnType<typeof getCurrentWindow> | null>(null);
   const idleClickThroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressDropRef = useRef(false);
+  const dragRef = useRef<{ active: boolean; moved: boolean; lastY: number }>({ active: false, moved: false, lastY: 0 });
   const [expanded, setExpanded] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(fallbackSettings);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "assistant", content: "Hi. Ask me anything, or paste text you want help with." },
+    { role: "assistant", content: "Hi. Drop an Olé from the badge, or ask a quick question here." },
   ]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("Ready");
   const [pendingMailboxJob, setPendingMailboxJob] = useState<MailboxJob | null>(null);
+  const [dockSide, setDockSide] = useState<"left" | "right">("right");
+  const [dockY, setDockY] = useState(50);
+  const [transparency, setTransparency] = useState(0);
 
   const providerLabel = useMemo(() => shortProviderLabel(settings), [settings]);
 
@@ -55,6 +72,7 @@ export function JarvisWidget() {
       /* outside Tauri */
     }
     void refreshSettings();
+    void refreshBubbleSettings();
   }, []);
 
   const setClickThrough = useCallback((enabled: boolean) => {
@@ -64,16 +82,19 @@ export function JarvisWidget() {
   const resize = useCallback(async (open: boolean) => {
     const win = appWindowRef.current;
     if (!win) return;
-    const nextSize = open ? new LogicalSize(CHAT_WIDTH, CHAT_HEIGHT) : new LogicalSize(ORB_SIZE, ORB_SIZE);
+    const nextSize = open ? new LogicalSize(CHAT_WIDTH, CHAT_HEIGHT) : new LogicalSize(PLATE_WIDTH, PLATE_HEIGHT);
     await win.setSize(nextSize).catch(() => {});
-  }, []);
+    if (!open) {
+      await invoke("dock_ole_widget", { side: dockSide, vertical: dockY }).catch(() => {});
+    }
+  }, [dockSide, dockY]);
 
   const collapse = useCallback(() => {
     setExpanded(false);
     setStatus("Ready");
     void resize(false);
     if (idleClickThroughTimer.current) clearTimeout(idleClickThroughTimer.current);
-    idleClickThroughTimer.current = setTimeout(() => setClickThrough(true), 900);
+    setClickThrough(false);
   }, [resize, setClickThrough]);
 
   const expand = useCallback(() => {
@@ -86,10 +107,12 @@ export function JarvisWidget() {
   useEffect(() => {
     setClickThrough(false);
     void resize(false);
-    idleClickThroughTimer.current = setTimeout(() => setClickThrough(true), 1200);
     const subs = [
-      listen("jarvis://open-chat", expand),
+      listen("ole://open-chat", expand),
       listen("hotkey-pressed", expand),
+      listen("ole-bubble-settings-changed", () => {
+        void refreshBubbleSettings();
+      }),
     ];
     return () => {
       if (idleClickThroughTimer.current) clearTimeout(idleClickThroughTimer.current);
@@ -97,6 +120,24 @@ export function JarvisWidget() {
       subs.forEach((sub) => sub.then((off) => off()));
     };
   }, [expand, resize, setClickThrough]);
+
+  async function refreshBubbleSettings() {
+    const [side, y, alpha] = await Promise.all([
+      invoke<string | null>("get_setting", { key: "ole_dock_side" }).catch(() => null),
+      invoke<string | null>("get_setting", { key: "ole_dock_y" }).catch(() => null),
+      invoke<string | null>("get_setting", { key: "ole_bubble_transparency" }).catch(() => null),
+    ]);
+    const nextSide = side === "left" || side === "right" ? side : "right";
+    const nextY = y ? Math.max(0, Math.min(100, Number(y))) : 50;
+    const nextTransparency = alpha ? Math.max(0, Math.min(70, Number(alpha))) : 0;
+    setDockSide(nextSide);
+    setDockY(nextY);
+    setTransparency(nextTransparency);
+    if (!expanded) {
+      await resize(false);
+      await invoke("dock_ole_widget", { side: nextSide, vertical: nextY }).catch(() => {});
+    }
+  }
 
   async function refreshSettings() {
     try {
@@ -145,8 +186,8 @@ export function JarvisWidget() {
       {
         role: "assistant",
         content: includeScreenshot
-          ? `Sent to Zeus with a screenshot. Waiting for reply in ${job.outboxDir}.`
-          : `Sent to Zeus. Waiting for reply in ${job.outboxDir}.`,
+          ? `Sent with a screenshot. Waiting for reply in ${job.outboxDir}.`
+          : `Sent. Waiting for reply in ${job.outboxDir}.`,
       },
     ]);
     setStatus("Waiting for Zeus...");
@@ -158,7 +199,7 @@ export function JarvisWidget() {
       if (!reply?.trim()) return;
       setPendingMailboxJob(null);
       setBusy(false);
-      setStatus("Zeus replied");
+      setStatus("Reply ready");
       setMessages((current) => [...current, { role: "assistant", content: reply }]);
       const latestSettings = await refreshSettings();
       await speakReply(reply, latestSettings);
@@ -184,6 +225,70 @@ export function JarvisWidget() {
         text,
       },
     }).catch(() => {});
+  }
+
+  async function dropAnOle(note = "Drop an Olé") {
+    setClickThrough(false);
+    setBusy(true);
+    setStatus("Dropping an Olé...");
+    try {
+      const item = await invoke<DossierItem>("create_dossier_item", { note });
+      setMessages((current) => [...current, { role: "assistant", content: `Saved to Living Dossier: ${item.screenshotHash.slice(0, 12)}` }]);
+      await analyzeDossierItem(item);
+    } catch (error) {
+      setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? error.message : String(error) }]);
+      setStatus("Drop failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function analyzeDossierItem(item: DossierItem) {
+    const latestSettings = await refreshSettings();
+    const provider = getMeshPromptProvider(latestSettings.provider.provider);
+    const apiKey = provider.authMode === "api-key"
+      ? await invoke<string | null>("get_provider_key", { provider: provider.id })
+      : null;
+    if (provider.authMode === "api-key" && !apiKey) {
+      setStatus("Analysis needs an API key");
+      setMessages((current) => [...current, { role: "assistant", content: "Capture saved. Analysis needs an API key in Settings > API Keys." }]);
+      return;
+    }
+
+    try {
+      const imageBase64 = await invoke<string>("read_dossier_screenshot_base64", { id: item.id });
+      const client = new MeshPromptClient({
+        provider,
+        credentials: { apiKey: apiKey ?? undefined, baseUrl: latestSettings.provider.baseUrl },
+        timeoutMs: latestSettings.timeoutMs,
+        appName: "Olé",
+      });
+      const response = await client.generate({
+        model: latestSettings.provider.model || provider.defaultModel,
+        temperature: 0.2,
+        maxOutputTokens: 360,
+        messages: [
+          {
+            role: "system",
+            content: "You write short structured notes for a local living dossier. Be concise. Do not claim to control the PC.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: `Analyze this desktop capture for a dossier item. Note: ${item.note || "Drop an Olé"}. Return: Summary, Evidence, Suggested next step.` },
+              { type: "image", mimeType: "image/png", data: imageBase64 },
+            ],
+          },
+        ],
+      });
+      await invoke("attach_dossier_analysis", { id: item.id, analysis: response.content });
+      setStatus("Dossier updated");
+      setMessages((current) => [...current, { role: "assistant", content: response.content }]);
+      await speakReply(response.content, latestSettings);
+    } catch (error) {
+      setStatus("Capture saved");
+      setMessages((current) => [...current, { role: "assistant", content: `Capture saved. Analysis could not run: ${error instanceof Error ? error.message : String(error)}` }]);
+    }
   }
 
   async function sendMessage() {
@@ -217,13 +322,13 @@ export function JarvisWidget() {
         provider,
         credentials: { apiKey: apiKey ?? undefined, baseUrl: latestSettings.provider.baseUrl },
         timeoutMs: latestSettings.timeoutMs,
-        appName: "MeshUtility Jarvis",
+        appName: "Olé",
       });
 
       const requestMessages: MeshPromptMessage[] = [
         {
           role: "system",
-          content: "You are a concise, friendly desktop assistant for a non-technical Windows user. Do not claim you can control the PC.",
+          content: "You are Olé, a concise, friendly desktop assistant for a non-technical Windows user. Do not claim you can control the PC.",
         },
         ...nextMessages.slice(-8),
       ];
@@ -248,25 +353,68 @@ export function JarvisWidget() {
 
   if (!expanded) {
     return (
-      <div className="jarvis-stage">
-        <button className="jarvis-orb" aria-label="Open Jarvis chat" onClick={expand}>
-          <span className="jarvis-orb-core"><Bot size={24} /></span>
-          <span className="jarvis-orb-ring" />
+      <div className="ole-stage">
+        <button
+          className="ole-badge"
+          aria-label="Drop an Olé"
+          style={{ opacity: 1 - transparency / 100 }}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            dragRef.current = { active: true, moved: false, lastY: event.screenY };
+            longPressDropRef.current = false;
+            longPressTimer.current = setTimeout(() => {
+              longPressDropRef.current = true;
+              void dropAnOle();
+            }, 550);
+          }}
+          onPointerMove={(event) => {
+            if (!dragRef.current.active) return;
+            const delta = event.screenY - dragRef.current.lastY;
+            if (Math.abs(delta) < 2) return;
+            dragRef.current = { active: true, moved: true, lastY: event.screenY };
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            setDockY((current) => {
+              const next = Math.max(0, Math.min(100, current + delta / 6));
+              void invoke("dock_ole_widget", { side: dockSide, vertical: next }).catch(() => {});
+              return next;
+            });
+          }}
+          onPointerUp={(event) => {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            if (dragRef.current.moved) {
+              void invoke("set_setting", { key: "ole_dock_y", value: String(Math.round(dockY)) }).catch(() => {});
+            }
+            window.setTimeout(() => {
+              dragRef.current = { active: false, moved: false, lastY: 0 };
+            }, 0);
+          }}
+          onPointerCancel={() => {
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            dragRef.current = { active: false, moved: false, lastY: 0 };
+          }}
+          onClick={() => {
+            if (longPressDropRef.current || dragRef.current.moved) return;
+            void dropAnOle();
+          }}
+        >
+          <span className="ole-badge-core"><img src="/ole-badge.svg" alt="" /></span>
+          <span className="ole-badge-ring" />
         </button>
-        <JarvisStyles />
+        <OleStyles />
       </div>
     );
   }
 
   return (
-    <div className="jarvis-stage">
-      <section className="jarvis-chat" onMouseDown={() => setClickThrough(false)}>
-        <header className="jarvis-chat-head" data-tauri-drag-region>
+    <div className="ole-stage">
+      <section className="ole-chat" onMouseDown={() => setClickThrough(false)}>
+        <header className="ole-chat-head" data-tauri-drag-region>
           <div data-tauri-drag-region>
-            <strong data-tauri-drag-region>Jarvis</strong>
+            <strong data-tauri-drag-region>Olé</strong>
             <span data-tauri-drag-region>{providerLabel}</span>
           </div>
-          <div className="jarvis-head-actions">
+          <div className="ole-head-actions">
             <button type="button" onClick={openSettings} title="Open settings">
               <Settings size={15} />
             </button>
@@ -276,16 +424,16 @@ export function JarvisWidget() {
           </div>
         </header>
 
-        <div className="jarvis-messages">
+        <div className="ole-messages">
           {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className={`jarvis-message ${message.role}`}>
+            <div key={`${message.role}-${index}`} className={`ole-message ${message.role}`}>
               {message.content}
             </div>
           ))}
-          {busy && <div className="jarvis-message assistant">Thinking...</div>}
+          {busy && <div className="ole-message assistant">Thinking...</div>}
         </div>
 
-        <footer className="jarvis-compose">
+        <footer className="ole-compose">
           <textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -296,21 +444,21 @@ export function JarvisWidget() {
               }
               if (event.key === "Escape") collapse();
             }}
-            placeholder="Ask Jarvis..."
+            placeholder="Ask Olé..."
             autoFocus
           />
           <button type="button" disabled={busy || !draft.trim()} onClick={() => void sendMessage()} aria-label="Send">
             <Send size={16} />
           </button>
         </footer>
-        <div className="jarvis-status">{status}</div>
+        <div className="ole-status">{status}</div>
       </section>
-      <JarvisStyles />
+      <OleStyles />
     </div>
   );
 }
 
-function JarvisStyles() {
+function OleStyles() {
   return (
     <style>{`
       *, *::before, *::after { box-sizing: border-box; }
@@ -322,7 +470,7 @@ function JarvisStyles() {
         background: transparent !important;
         font-family: 'Noto Sans', 'Segoe UI', sans-serif;
       }
-      .jarvis-stage {
+      .ole-stage {
         width: 100vw;
         height: 100vh;
         display: flex;
@@ -330,36 +478,44 @@ function JarvisStyles() {
         justify-content: center;
         background: transparent;
       }
-      .jarvis-orb {
+      .ole-badge {
         position: relative;
-        width: 68px;
-        height: 68px;
-        border: 0;
-        border-radius: 50%;
+        width: 78px;
+        height: 112px;
+        border: 1px solid rgba(255, 229, 168, 0.34);
+        border-radius: 999px;
         padding: 0;
-        background: radial-gradient(circle at 34% 28%, #f4fbff 0 7%, #7dd3fc 8% 20%, #2563eb 38%, #111827 68%, #050816 100%);
+        background: rgba(7, 7, 7, 0.68);
         color: #ecfeff;
-        cursor: pointer;
-        box-shadow: 0 0 24px rgba(56, 189, 248, 0.82), 0 0 72px rgba(37, 99, 235, 0.42), inset 0 0 18px rgba(255,255,255,0.22);
+        cursor: grab;
+        box-shadow: 0 0 24px rgba(248, 208, 112, 0.38), inset 0 0 18px rgba(255,255,255,0.12);
         -webkit-app-region: no-drag;
       }
-      .jarvis-orb-core {
+      .ole-badge:active { cursor: grabbing; }
+      .ole-badge-core {
         position: absolute;
-        inset: 13px;
+        inset: 9px;
         display: grid;
         place-items: center;
         border-radius: 50%;
-        background: rgba(8, 13, 28, 0.58);
+        background: transparent;
         backdrop-filter: blur(8px);
       }
-      .jarvis-orb-ring {
-        position: absolute;
-        inset: -5px;
+      .ole-badge-core img {
+        width: 62px;
+        height: 62px;
+        display: block;
         border-radius: 50%;
-        border: 1px solid rgba(125, 211, 252, 0.72);
-        animation: jarvisPulse 2.3s ease-in-out infinite;
+        filter: drop-shadow(0 0 12px rgba(248, 208, 112, 0.42));
       }
-      .jarvis-chat {
+      .ole-badge-ring {
+        position: absolute;
+        inset: 5px;
+        border-radius: 999px;
+        border: 1px solid rgba(248, 208, 112, 0.32);
+        animation: olePulse 2.3s ease-in-out infinite;
+      }
+      .ole-chat {
         width: 348px;
         height: 488px;
         display: flex;
@@ -372,7 +528,7 @@ function JarvisStyles() {
         box-shadow: 0 16px 80px rgba(0, 0, 0, 0.62), 0 0 48px rgba(56, 189, 248, 0.18);
         backdrop-filter: blur(22px) saturate(150%);
       }
-      .jarvis-chat-head {
+      .ole-chat-head {
         height: 62px;
         display: flex;
         align-items: center;
@@ -381,12 +537,12 @@ function JarvisStyles() {
         border-bottom: 1px solid rgba(125, 211, 252, 0.14);
         cursor: move;
       }
-      .jarvis-chat-head strong {
+      .ole-chat-head strong {
         display: block;
         font-size: 15px;
         letter-spacing: 0.02em;
       }
-      .jarvis-chat-head span {
+      .ole-chat-head span {
         display: block;
         max-width: 220px;
         overflow: hidden;
@@ -395,25 +551,25 @@ function JarvisStyles() {
         color: rgba(229, 246, 255, 0.62);
         font-size: 11px;
       }
-      .jarvis-head-actions {
+      .ole-head-actions {
         display: flex;
         gap: 6px;
       }
-      .jarvis-head-actions button,
-      .jarvis-compose button {
+      .ole-head-actions button,
+      .ole-compose button {
         border: 1px solid rgba(125, 211, 252, 0.2);
         background: rgba(125, 211, 252, 0.08);
         color: #e5f6ff;
         border-radius: 12px;
         cursor: pointer;
       }
-      .jarvis-head-actions button {
+      .ole-head-actions button {
         width: 30px;
         height: 30px;
         display: grid;
         place-items: center;
       }
-      .jarvis-messages {
+      .ole-messages {
         flex: 1;
         display: flex;
         flex-direction: column;
@@ -421,7 +577,7 @@ function JarvisStyles() {
         padding: 14px;
         overflow-y: auto;
       }
-      .jarvis-message {
+      .ole-message {
         max-width: 86%;
         padding: 10px 12px;
         border-radius: 16px;
@@ -429,23 +585,23 @@ function JarvisStyles() {
         line-height: 1.45;
         white-space: pre-wrap;
       }
-      .jarvis-message.assistant {
+      .ole-message.assistant {
         align-self: flex-start;
         background: rgba(125, 211, 252, 0.1);
         border: 1px solid rgba(125, 211, 252, 0.14);
       }
-      .jarvis-message.user {
+      .ole-message.user {
         align-self: flex-end;
         background: rgba(59, 130, 246, 0.28);
         border: 1px solid rgba(147, 197, 253, 0.24);
       }
-      .jarvis-compose {
+      .ole-compose {
         display: flex;
         gap: 8px;
         padding: 12px;
         border-top: 1px solid rgba(125, 211, 252, 0.14);
       }
-      .jarvis-compose textarea {
+      .ole-compose textarea {
         flex: 1;
         min-height: 46px;
         max-height: 94px;
@@ -457,21 +613,21 @@ function JarvisStyles() {
         padding: 10px 12px;
         outline: none;
       }
-      .jarvis-compose button {
+      .ole-compose button {
         width: 46px;
         height: 46px;
       }
-      .jarvis-compose button:disabled {
+      .ole-compose button:disabled {
         opacity: 0.45;
         cursor: default;
       }
-      .jarvis-status {
+      .ole-status {
         height: 22px;
         padding: 0 16px 10px;
         color: rgba(229, 246, 255, 0.54);
         font-size: 11px;
       }
-      @keyframes jarvisPulse {
+      @keyframes olePulse {
         0%, 100% { transform: scale(0.94); opacity: 0.72; }
         50% { transform: scale(1.08); opacity: 0.18; }
       }
