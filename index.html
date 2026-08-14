@@ -2,12 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo-prompt.png" />
+    <link rel="icon" type="image/svg+xml" href="/ole-badge.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
-    <title>MeshUtility</title>
+    <title>Olé</title>
     
     <script>
       (function() {
@@ -30,7 +30,7 @@
           'solarized-light': { bg: '#fdf6e3', start: '#fdf6e3', end: '#eee8d5', text: '#073642', accent: '#268bd2', sub: '#586e75', glow: 0.05 }
         };
 
-        const themeId = localStorage.getItem('meshutility-theme-id') || 'default';
+        const themeId = localStorage.getItem('ole-theme-id') || 'default';
         const theme = themes[themeId] || themes['default'];
         
         const root = document.documentElement;
@@ -126,7 +126,7 @@
             "></div>
 
             <!-- High-tech logo image to ensure branding consistency -->
-            <img src="/logo-prompt.png" alt="MeshUtility" style="
+            <img src="/ole-badge.svg" alt="Olé" style="
               width: 44px;
               height: 44px;
               border-radius: 8px;
@@ -146,7 +146,7 @@
               color: var(--text-color);
               text-transform: uppercase;
               text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            ">MeshUtility</h1>
+            ">Olé</h1>
             <span style="
               font-size: 10px;
               font-weight: 600;

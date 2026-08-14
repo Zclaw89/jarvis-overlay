@@ -81,7 +81,7 @@ impl ClipboardManager {
         let start_wait = Instant::now();
         while modifiers_physically_down() {
             if start_wait.elapsed() > Duration::from_millis(500) {
-                eprintln!("[MeshUtility] Warning: Physical modifier keys did not release in time.");
+                eprintln!("[Olé] Warning: Physical modifier keys did not release in time.");
                 break;
             }
             thread::sleep(Duration::from_millis(15));

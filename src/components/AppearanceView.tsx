@@ -5,7 +5,7 @@ import {
   applyThemeById,
   getStoredThemeId,
   storeThemeId,
-  type MeshUtilityTheme,
+  type OleTheme,
 } from '../lib/appearance'
 
 function ThemeCard({
@@ -13,7 +13,7 @@ function ThemeCard({
   active,
   onSelect,
 }: {
-  theme: MeshUtilityTheme
+  theme: OleTheme
   active: boolean
   onSelect: () => void
 }) {

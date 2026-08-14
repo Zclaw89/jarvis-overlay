@@ -1,10 +1,10 @@
 # Third-Party Notices
 
-MeshUtility is licensed under the Apache License, Version 2.0 (see `LICENSE`).
+Olé is licensed under the Apache License, Version 2.0 (see `LICENSE`).
 
 This application bundles, links against, or otherwise incorporates the
 third-party components listed below. Each remains under its own license, and
-those licenses are fully compatible with redistribution of MeshUtility under
+those licenses are fully compatible with redistribution of Olé under
 Apache-2.0. Where a component is redistributed in binary form, its required
 copyright and permission notices are reproduced here.
 
