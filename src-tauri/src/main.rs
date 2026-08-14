@@ -9,9 +9,7 @@ mod engine;
 
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
-use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
@@ -203,7 +201,11 @@ fn dossier_root() -> Result<PathBuf, String> {
 }
 
 fn dossier_items_dir() -> Result<PathBuf, String> {
-    let dir = dossier_root()?.join("items");
+    let root = dossier_root()?;
+    for table in ["items", "ole_containers", "source_artifacts", "ole_artifact_links"] {
+        fs::create_dir_all(root.join(table)).map_err(|err| format!("Failed to create dossier table folder: {err}"))?;
+    }
+    let dir = root.join("items");
     fs::create_dir_all(&dir).map_err(|err| format!("Failed to create dossier folder: {err}"))?;
     Ok(dir)
 }
@@ -217,9 +219,8 @@ fn new_dossier_item_id() -> String {
 }
 
 fn hash_bytes(bytes: &[u8]) -> String {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 fn read_dossier_meta(path: &std::path::Path) -> Result<DossierMeta, String> {
@@ -744,17 +745,73 @@ fn create_dossier_item(note: String) -> Result<DossierMeta, String> {
     capture_screenshot_to_file(&screenshot_path)?;
     let screenshot_bytes = fs::read(&screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
     let source_title = foreground_window_title();
+    let captured_at = chrono::Utc::now().to_rfc3339();
+    let screenshot_hash = hash_bytes(&screenshot_bytes);
     let meta = DossierMeta {
-        id,
-        created_at: chrono::Utc::now().to_rfc3339(),
+        id: id.clone(),
+        created_at: captured_at.clone(),
         note,
         screenshot_path: screenshot_path.to_string_lossy().to_string(),
-        screenshot_hash: hash_bytes(&screenshot_bytes),
-        source_title,
+        screenshot_hash: screenshot_hash.clone(),
+        source_title: source_title.clone(),
         analysis: None,
     };
     write_dossier_meta(&item_dir, &meta)?;
+    write_android_compatible_dossier_files(&id, &meta, &captured_at, &screenshot_hash)?;
     Ok(meta)
+}
+
+fn write_android_compatible_dossier_files(
+    id: &str,
+    meta: &DossierMeta,
+    captured_at: &str,
+    screenshot_hash: &str,
+) -> Result<(), String> {
+    write_android_compatible_dossier_files_with_mime(id, meta, captured_at, screenshot_hash, "image/png")
+}
+
+fn write_android_compatible_dossier_files_with_mime(
+    id: &str,
+    meta: &DossierMeta,
+    captured_at: &str,
+    screenshot_hash: &str,
+    mime: &str,
+) -> Result<(), String> {
+    let root = dossier_root()?;
+    fs::create_dir_all(root.join("ole_containers")).map_err(|err| format!("Failed to create ole_containers: {err}"))?;
+    fs::create_dir_all(root.join("source_artifacts")).map_err(|err| format!("Failed to create source_artifacts: {err}"))?;
+    fs::create_dir_all(root.join("ole_artifact_links")).map_err(|err| format!("Failed to create ole_artifact_links: {err}"))?;
+    let metadata = serde_json::json!({
+        "sourceTitle": meta.source_title.clone().unwrap_or_else(|| "UNVERIFIED".to_string()),
+        "sourceVerified": meta.source_title.is_some(),
+    });
+    let container = serde_json::json!({
+        "id": id,
+        "topic": meta.note,
+        "createdAt": captured_at,
+    });
+    let artifact = serde_json::json!({
+        "id": id,
+        "containerId": id,
+        "filePath": meta.screenshot_path,
+        "sha256": screenshot_hash,
+        "capturedAt": captured_at,
+        "mime": mime,
+        "metadataJson": metadata.to_string(),
+    });
+    let link = serde_json::json!({
+        "id": format!("{id}-contains"),
+        "containerId": id,
+        "artifactId": id,
+        "linkedArtifactId": serde_json::Value::Null,
+        "linkType": "contains",
+    });
+    fs::write(root.join("ole_containers").join(format!("{id}.json")), serde_json::to_string_pretty(&container).unwrap())
+        .map_err(|err| format!("Failed to write ole_containers row: {err}"))?;
+    fs::write(root.join("source_artifacts").join(format!("{id}.json")), serde_json::to_string_pretty(&artifact).unwrap())
+        .map_err(|err| format!("Failed to write source_artifacts row: {err}"))?;
+    fs::write(root.join("ole_artifact_links").join(format!("{id}-contains.json")), serde_json::to_string_pretty(&link).unwrap())
+        .map_err(|err| format!("Failed to write ole_artifact_links row: {err}"))
 }
 
 #[tauri::command]
@@ -797,6 +854,37 @@ fn read_dossier_screenshot_base64(id: String) -> Result<String, String> {
     let bytes = fs::read(meta.screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
     use base64::Engine;
     Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+fn import_dossier_file(file_name: String, mime: String, data_base64: String) -> Result<DossierMeta, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|err| format!("Failed to decode dropped file: {err}"))?;
+    let id = new_dossier_item_id();
+    let item_dir = dossier_items_dir()?.join(&id);
+    fs::create_dir_all(&item_dir).map_err(|err| format!("Failed to create dossier item: {err}"))?;
+    let safe_name = file_name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') { ch } else { '_' })
+        .collect::<String>();
+    let stored_path = item_dir.join(if safe_name.trim().is_empty() { "drop.bin" } else { safe_name.trim() });
+    fs::write(&stored_path, &bytes).map_err(|err| format!("Failed to write dropped file: {err}"))?;
+    let captured_at = chrono::Utc::now().to_rfc3339();
+    let sha256 = hash_bytes(&bytes);
+    let meta = DossierMeta {
+        id: id.clone(),
+        created_at: captured_at.clone(),
+        note: "Send to Olé".to_string(),
+        screenshot_path: stored_path.to_string_lossy().to_string(),
+        screenshot_hash: sha256.clone(),
+        source_title: None,
+        analysis: None,
+    };
+    write_dossier_meta(&item_dir, &meta)?;
+    write_android_compatible_dossier_files_with_mime(&id, &meta, &captured_at, &sha256, &mime)?;
+    Ok(meta)
 }
 
 fn capture_screenshot_to_file(path: &std::path::Path) -> Result<(), String> {
@@ -2347,6 +2435,7 @@ fn main() {
             list_dossier_items,
             attach_dossier_analysis,
             read_dossier_screenshot_base64,
+            import_dossier_file,
             test_voice,
             check_for_updates,
             install_update,

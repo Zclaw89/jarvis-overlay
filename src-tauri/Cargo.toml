@@ -33,6 +33,7 @@ futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 regex = "1"
 base64 = "0.22"
+sha2 = "0.10"
 # In-process speech engine (same crate Handy uses). Keeps the model loaded in
 # memory and runs inference in-process instead of spawning a subprocess that
 # reloads the model from disk on every dictation.

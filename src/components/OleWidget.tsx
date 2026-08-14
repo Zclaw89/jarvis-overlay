@@ -29,6 +29,8 @@ type DossierItem = {
   analysis?: string | null;
 };
 
+type OleMode = "OLE" | "REC" | "MIC" | "CAM";
+
 const PLATE_WIDTH = 84;
 const PLATE_HEIGHT = 124;
 const CHAT_WIDTH = 360;
@@ -62,6 +64,8 @@ export function OleWidget() {
   const [dockSide, setDockSide] = useState<"left" | "right">("right");
   const [dockY, setDockY] = useState(50);
   const [transparency, setTransparency] = useState(0);
+  const [mode, setMode] = useState<OleMode>("OLE");
+  const [modeActive, setModeActive] = useState(false);
 
   const providerLabel = useMemo(() => shortProviderLabel(settings), [settings]);
 
@@ -234,7 +238,7 @@ export function OleWidget() {
     try {
       const item = await invoke<DossierItem>("create_dossier_item", { note });
       setMessages((current) => [...current, { role: "assistant", content: `Saved to Living Dossier: ${item.screenshotHash.slice(0, 12)}` }]);
-      await analyzeDossierItem(item);
+      setStatus("Capture saved");
     } catch (error) {
       setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? error.message : String(error) }]);
       setStatus("Drop failed");
@@ -243,52 +247,30 @@ export function OleWidget() {
     }
   }
 
-  async function analyzeDossierItem(item: DossierItem) {
-    const latestSettings = await refreshSettings();
-    const provider = getMeshPromptProvider(latestSettings.provider.provider);
-    const apiKey = provider.authMode === "api-key"
-      ? await invoke<string | null>("get_provider_key", { provider: provider.id })
-      : null;
-    if (provider.authMode === "api-key" && !apiKey) {
-      setStatus("Analysis needs an API key");
-      setMessages((current) => [...current, { role: "assistant", content: "Capture saved. Analysis needs an API key in Settings > API Keys." }]);
+  function cycleMode(direction = 1) {
+    const modes: OleMode[] = ["OLE", "REC", "MIC", "CAM"];
+    const index = modes.indexOf(mode);
+    setMode(modes[(index + direction + modes.length) % modes.length]);
+    setModeActive(false);
+  }
+
+  async function handleBadgeAction() {
+    if (mode === "OLE") {
+      await dropAnOle();
       return;
     }
-
-    try {
-      const imageBase64 = await invoke<string>("read_dossier_screenshot_base64", { id: item.id });
-      const client = new MeshPromptClient({
-        provider,
-        credentials: { apiKey: apiKey ?? undefined, baseUrl: latestSettings.provider.baseUrl },
-        timeoutMs: latestSettings.timeoutMs,
-        appName: "Olé",
-      });
-      const response = await client.generate({
-        model: latestSettings.provider.model || provider.defaultModel,
-        temperature: 0.2,
-        maxOutputTokens: 360,
-        messages: [
-          {
-            role: "system",
-            content: "You write short structured notes for a local living dossier. Be concise. Do not claim to control the PC.",
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Analyze this desktop capture for a dossier item. Note: ${item.note || "Drop an Olé"}. Return: Summary, Evidence, Suggested next step.` },
-              { type: "image", mimeType: "image/png", data: imageBase64 },
-            ],
-          },
-        ],
-      });
-      await invoke("attach_dossier_analysis", { id: item.id, analysis: response.content });
-      setStatus("Dossier updated");
-      setMessages((current) => [...current, { role: "assistant", content: response.content }]);
-      await speakReply(response.content, latestSettings);
-    } catch (error) {
-      setStatus("Capture saved");
-      setMessages((current) => [...current, { role: "assistant", content: `Capture saved. Analysis could not run: ${error instanceof Error ? error.message : String(error)}` }]);
-    }
+    const stopping = modeActive;
+    setModeActive(!stopping);
+    setStatus(stopping ? `${mode} saved` : `${mode} started`);
+    setMessages((current) => [
+      ...current,
+      {
+        role: "assistant",
+        content: stopping
+          ? `${mode} stopped. Full media capture is a V1 placeholder; no background recorder was started.`
+          : `${mode} started as a V1 placeholder. Tap again to stop.`,
+      },
+    ]);
   }
 
   async function sendMessage() {
@@ -364,7 +346,7 @@ export function OleWidget() {
             longPressDropRef.current = false;
             longPressTimer.current = setTimeout(() => {
               longPressDropRef.current = true;
-              void dropAnOle();
+              void handleBadgeAction();
             }, 550);
           }}
           onPointerMove={(event) => {
@@ -395,10 +377,15 @@ export function OleWidget() {
           }}
           onClick={() => {
             if (longPressDropRef.current || dragRef.current.moved) return;
-            void dropAnOle();
+            void handleBadgeAction();
+          }}
+          onWheel={(event) => {
+            event.preventDefault();
+            cycleMode(event.deltaY >= 0 ? 1 : -1);
           }}
         >
           <span className="ole-badge-core"><img src="/ole-badge.svg" alt="" /></span>
+          <span className="ole-mode-label">{modeActive ? `${mode}●` : mode}</span>
           <span className="ole-badge-ring" />
         </button>
         <OleStyles />
@@ -507,6 +494,18 @@ function OleStyles() {
         display: block;
         border-radius: 50%;
         filter: drop-shadow(0 0 12px rgba(248, 208, 112, 0.42));
+      }
+      .ole-mode-label {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 15px;
+        color: #ffe9a8;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-align: center;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.82);
       }
       .ole-badge-ring {
         position: absolute;

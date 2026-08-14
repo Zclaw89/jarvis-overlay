@@ -23,15 +23,17 @@ The NSIS installer is named Olé and is written under `src-tauri/target/release/
 
 - **API Keys**: paste OpenAI or another supported chat key for fast analysis.
 - **Voice & Hotkey**: Local (Kokoro) is the default. First speak downloads the Kokoro helper automatically; no Python install is required. OpenAI and ElevenLabs only run after you select them and save a key.
-- **Floating badge**: choose left/right dock, vertical position, and transparency.
+- **Floating badge**: choose rail left/right/auto, vertical position, and transparency. Wheel over the badge to switch modes: Olé, REC, MIC, CAM.
 
 ## Drop an Olé
 
-Click or long-press the docked badge to take a normal screenshot and save a local Living Dossier item under `Documents\OleDossier\items`.
+Click or long-press the docked badge in Olé mode to take a normal screenshot and save a local Living Dossier item under `Documents\OleDossier\items`.
 
-If an API key is present, Olé adds a short structured analysis to the item. If not, the capture is saved and analysis waits for a key.
+The desktop data model mirrors Android names as plain local JSON: `ole_containers`, `source_artifacts`, and `ole_artifact_links`. Source artifacts store file path, sha256, capturedAt, mime, and metadataJson.
 
-Windows does not have Android's share sheet. On desktop, use Drop an Olé; Android remains the share door.
+Drag a text/image/video file onto Living Dossier to copy it into Olé storage with sha256 and UNVERIFIED source metadata. Windows does not have Android's share sheet; Android remains the share door.
+
+AI analysis/report links are stubbed in V1. API keys stay available for fast chat, but captures are saved first and no paid API is test-called automatically.
 
 ## Not in v1
 

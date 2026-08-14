@@ -24,7 +24,7 @@ interface MicrophoneStatus {
 
 type VoiceEngine = 'kokoro' | 'openai' | 'elevenlabs' | 'edge'
 type BrainMode = 'api' | 'mailbox'
-type DockSide = 'left' | 'right'
+type DockSide = 'left' | 'right' | 'auto'
 
 const VOICE_OPTIONS: Record<VoiceEngine, { id: string; label: string }[]> = {
   kokoro: [
@@ -254,7 +254,7 @@ export function Settings() {
       if (v === 'api' || v === 'mailbox') setBrainMode(v)
     })
     invoke<string|null>('get_setting', { key:'ole_dock_side' }).then(v => {
-      if (v === 'left' || v === 'right') setDockSide(v)
+      if (v === 'left' || v === 'right' || v === 'auto') setDockSide(v)
     })
     invoke<string|null>('get_setting', { key:'ole_dock_y' }).then(v => v && setDockY(Math.max(0, Math.min(100, +v))))
     invoke<string|null>('get_setting', { key:'ole_bubble_transparency' }).then(v => v && setBubbleTransparency(Math.max(0, Math.min(70, +v))))
@@ -347,11 +347,9 @@ export function Settings() {
     setVoiceTestStatus('Testing voice...')
     const engineToUse = selectedPaidVoiceMissingKey ? 'kokoro' : voiceEngine
     try {
-      if (voiceEngine === 'openai' && openAiVoiceKey.trim()) {
-        await invoke('save_provider_key', { provider: 'openai', apiKey: openAiVoiceKey.trim() })
-      }
-      if (voiceEngine === 'elevenlabs' && elevenLabsKey.trim()) {
-        await invoke('save_provider_key', { provider: 'elevenlabs', apiKey: elevenLabsKey.trim() })
+      if (voiceEngine === 'openai' || voiceEngine === 'elevenlabs') {
+        setVoiceTestStatus('Paid voice test is disabled in V1. Choose Local (Kokoro) to test voice.')
+        return
       }
       const result = await invoke<string>('test_voice', {
         request: {
@@ -420,13 +418,13 @@ export function Settings() {
       <section style={{ display:'flex', flexDirection:'column', gap:10 }}>
         <label style={{ fontSize:11, fontWeight:500, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Floating badge</label>
         <div style={{ display:'flex', gap:10 }}>
-          {(['left', 'right'] as const).map(side => (
+          {(['left', 'right', 'auto'] as const).map(side => (
             <button key={side} type="button" onClick={() => {
               setDockSide(side)
               saveBubbleSetting('ole_dock_side', side)
             }} style={{ flex:1, padding:'14px 16px', borderRadius:10, textAlign:'left', cursor:'pointer', background: dockSide===side ? 'color-mix(in oklab, var(--primary) 12%, var(--surface))' : 'var(--surface)', border:`1.5px solid ${dockSide===side ? 'var(--primary)' : 'var(--border)'}`, fontFamily:"'Noto Sans',sans-serif" }}>
-              <div style={{ fontSize:13, fontWeight:600, color: dockSide===side ? 'var(--primary)' : 'var(--text)' }}>Dock {side}</div>
-              <div style={{ fontSize:12, color:'var(--text-muted)' }}>Keep the badge on the {side} edge.</div>
+              <div style={{ fontSize:13, fontWeight:600, color: dockSide===side ? 'var(--primary)' : 'var(--text)' }}>Rail {side}</div>
+              <div style={{ fontSize:12, color:'var(--text-muted)' }}>{side === 'auto' ? 'Use the nearest edge.' : `Keep the badge on the ${side} edge.`}</div>
             </button>
           ))}
         </div>
