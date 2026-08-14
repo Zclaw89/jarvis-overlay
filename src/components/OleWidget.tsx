@@ -50,8 +50,9 @@ export function OleWidget() {
   const appWindowRef = useRef<ReturnType<typeof getCurrentWindow> | null>(null);
   const idleClickThroughTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressDropRef = useRef(false);
-  const dragRef = useRef<{ active: boolean; moved: boolean; lastY: number }>({ active: false, moved: false, lastY: 0 });
+  const dragRef = useRef<{ active: boolean; moved: boolean; lastY: number; startY: number; lockTriggered: boolean }>({ active: false, moved: false, lastY: 0, startY: 0, lockTriggered: false });
   const [expanded, setExpanded] = useState(false);
   const [settings, setSettings] = useState<SettingsState>(fallbackSettings);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -63,9 +64,11 @@ export function OleWidget() {
   const [pendingMailboxJob, setPendingMailboxJob] = useState<MailboxJob | null>(null);
   const [dockSide, setDockSide] = useState<"left" | "right">("right");
   const [dockY, setDockY] = useState(50);
-  const [transparency, setTransparency] = useState(0);
+  const [transparency, setTransparency] = useState(100);
   const [mode, setMode] = useState<OleMode>("OLE");
   const [modeActive, setModeActive] = useState(false);
+  const [lockRemoteItem, setLockRemoteItem] = useState<DossierItem | null>(null);
+  const [lockInstruction, setLockInstruction] = useState("");
 
   const providerLabel = useMemo(() => shortProviderLabel(settings), [settings]);
 
@@ -95,9 +98,11 @@ export function OleWidget() {
 
   const collapse = useCallback(() => {
     setExpanded(false);
+    setLockRemoteItem(null);
     setStatus("Ready");
     void resize(false);
     if (idleClickThroughTimer.current) clearTimeout(idleClickThroughTimer.current);
+    if (tapTimer.current) clearTimeout(tapTimer.current);
     setClickThrough(false);
   }, [resize, setClickThrough]);
 
@@ -273,6 +278,45 @@ export function OleWidget() {
     ]);
   }
 
+  async function lockRemoteCapture() {
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    setClickThrough(false);
+    setBusy(true);
+    setStatus(mode === "VOICE_RECORD" && modeActive ? "Waiting for VOICE_RECORD to stop..." : "Lock capture...");
+    try {
+      if (mode === "VOICE_RECORD" && modeActive) {
+        setMessages((current) => [...current, { role: "assistant", content: "VOICE_RECORD is active. Finish that recording before speaking into the lock remote." }]);
+        return;
+      }
+      await invoke("flash_ole_screen").catch(() => {});
+      const item = await invoke<DossierItem>("create_dossier_item", { note: "Lock remote capture" });
+      setLockRemoteItem(item);
+      setLockInstruction("");
+      setExpanded(false);
+      await appWindowRef.current?.setSize(new LogicalSize(300, 220)).catch(() => {});
+      setStatus("Lock remote ready");
+    } catch (error) {
+      setMessages((current) => [...current, { role: "assistant", content: error instanceof Error ? error.message : String(error) }]);
+      setStatus("Lock capture failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveLockInstruction() {
+    if (!lockRemoteItem) return;
+    const text = lockInstruction.trim() || "No instruction added.";
+    await invoke("attach_dossier_analysis", {
+      id: lockRemoteItem.id,
+      analysis: `Lock remote instruction:\n${text}`,
+    }).catch(() => {});
+    setMessages((current) => [...current, { role: "assistant", content: `Saved lock instruction for ${lockRemoteItem.screenshotHash.slice(0, 12)}.` }]);
+    setLockRemoteItem(null);
+    setLockInstruction("");
+    void resize(false);
+  }
+
   async function sendMessage() {
     const text = draft.trim();
     if (!text || busy) return;
@@ -334,6 +378,28 @@ export function OleWidget() {
   }
 
   if (!expanded) {
+    if (lockRemoteItem) {
+      return (
+        <div className="ole-stage">
+          <section className="ole-lock-remote">
+            <strong>Lock remote</strong>
+            <span>{lockRemoteItem.screenshotHash.slice(0, 12)}</span>
+            <textarea
+              value={lockInstruction}
+              onChange={(event) => setLockInstruction(event.target.value)}
+              placeholder="Speak or type what Olé should do..."
+              autoFocus
+            />
+            <div>
+              <button onClick={() => void saveLockInstruction()}>Save</button>
+              <button onClick={() => { setLockRemoteItem(null); void resize(false); }}>Close</button>
+            </div>
+          </section>
+          <OleStyles />
+        </div>
+      );
+    }
+
     return (
       <div className="ole-stage">
         <button
@@ -342,7 +408,7 @@ export function OleWidget() {
           style={{ opacity: transparency / 100 }}
           onPointerDown={(event) => {
             event.currentTarget.setPointerCapture(event.pointerId);
-            dragRef.current = { active: true, moved: false, lastY: event.screenY };
+            dragRef.current = { active: true, moved: false, lastY: event.screenY, startY: event.screenY, lockTriggered: false };
             longPressDropRef.current = false;
             longPressTimer.current = setTimeout(() => {
               longPressDropRef.current = true;
@@ -352,8 +418,16 @@ export function OleWidget() {
           onPointerMove={(event) => {
             if (!dragRef.current.active) return;
             const delta = event.screenY - dragRef.current.lastY;
+            const total = event.screenY - dragRef.current.startY;
+            if (total < -42 && !dragRef.current.lockTriggered) {
+              dragRef.current = { ...dragRef.current, lockTriggered: true };
+              longPressDropRef.current = true;
+              if (longPressTimer.current) clearTimeout(longPressTimer.current);
+              void lockRemoteCapture();
+              return;
+            }
             if (Math.abs(delta) < 2) return;
-            dragRef.current = { active: true, moved: true, lastY: event.screenY };
+            dragRef.current = { ...dragRef.current, active: true, moved: true, lastY: event.screenY };
             if (longPressTimer.current) clearTimeout(longPressTimer.current);
             setDockY((current) => {
               const next = Math.max(0, Math.min(100, current + delta / 6));
@@ -368,16 +442,18 @@ export function OleWidget() {
               void invoke("set_setting", { key: "ole_dock_y", value: String(Math.round(dockY)) }).catch(() => {});
             }
             window.setTimeout(() => {
-              dragRef.current = { active: false, moved: false, lastY: 0 };
+              dragRef.current = { active: false, moved: false, lastY: 0, startY: 0, lockTriggered: false };
             }, 0);
           }}
           onPointerCancel={() => {
             if (longPressTimer.current) clearTimeout(longPressTimer.current);
-            dragRef.current = { active: false, moved: false, lastY: 0 };
+            dragRef.current = { active: false, moved: false, lastY: 0, startY: 0, lockTriggered: false };
           }}
+          onDoubleClick={() => void lockRemoteCapture()}
           onClick={() => {
             if (longPressDropRef.current || dragRef.current.moved) return;
-            void handleBadgeAction();
+            if (tapTimer.current) clearTimeout(tapTimer.current);
+            tapTimer.current = setTimeout(() => void handleBadgeAction(), 230);
           }}
           onWheel={(event) => {
             event.preventDefault();
@@ -513,6 +589,47 @@ function OleStyles() {
         border-radius: 999px;
         border: 1px solid rgba(248, 208, 112, 0.32);
         animation: olePulse 2.3s ease-in-out infinite;
+      }
+      .ole-lock-remote {
+        width: 288px;
+        height: 208px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 14px;
+        border-radius: 22px;
+        border: 1px solid rgba(255, 229, 168, 0.28);
+        background: rgba(9, 9, 9, 0.88);
+        color: #ffe9a8;
+        box-shadow: 0 14px 50px rgba(0,0,0,0.45);
+      }
+      .ole-lock-remote span {
+        color: rgba(255, 233, 168, 0.68);
+        font-size: 11px;
+      }
+      .ole-lock-remote textarea {
+        flex: 1;
+        min-height: 76px;
+        resize: none;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 229, 168, 0.2);
+        background: rgba(0,0,0,0.34);
+        color: #fff7dd;
+        padding: 10px;
+        outline: none;
+      }
+      .ole-lock-remote div {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .ole-lock-remote button {
+        border: 1px solid rgba(255, 229, 168, 0.24);
+        border-radius: 10px;
+        background: rgba(255, 229, 168, 0.1);
+        color: #ffe9a8;
+        padding: 6px 10px;
+        cursor: pointer;
       }
       .ole-chat {
         width: 348px;

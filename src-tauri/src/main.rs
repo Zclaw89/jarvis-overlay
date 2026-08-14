@@ -737,6 +737,19 @@ fn read_mailbox_reply(job_id: String) -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+fn flash_ole_screen() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $f=New-Object System.Windows.Forms.Form; $f.FormBorderStyle='None'; $f.StartPosition='Manual'; $f.Bounds=$b; $f.TopMost=$true; $f.BackColor=[System.Drawing.Color]::White; $f.Opacity=0.45; $t=New-Object System.Windows.Forms.Timer; $t.Interval=120; $t.Add_Tick({$t.Stop();$f.Close()}); $t.Start(); [void]$f.ShowDialog()";
+        Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .status()
+            .map_err(|err| format!("Failed to flash screen: {err}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn create_dossier_item(note: String) -> Result<DossierMeta, String> {
     let id = new_dossier_item_id();
     let item_dir = dossier_items_dir()?.join(&id);
@@ -2426,6 +2439,7 @@ fn main() {
             get_mailbox_paths,
             create_mailbox_job,
             read_mailbox_reply,
+            flash_ole_screen,
             create_dossier_item,
             list_dossier_items,
             attach_dossier_analysis,
