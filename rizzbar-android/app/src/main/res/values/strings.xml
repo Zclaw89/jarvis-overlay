@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RizzBar</string>
+    <string name="acc_service_label">RizzBar Assistant</string>
+    <string name="acc_service_description">Reads the visible chat only when you tap the RizzBar Reply button, and inserts the reply you pick into the text field. Nothing is read continuously, logged, or sent anywhere except the AI endpoint you configured.</string>
+</resources>
