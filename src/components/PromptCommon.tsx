@@ -47,6 +47,9 @@ export interface SettingsState {
   defaultActionId: string;
   paused: boolean;
   enhancePromptMode: "auto" | "concise" | "structured" | "detailed";
+  voiceEngine: "kokoro" | "openai" | "elevenlabs" | "edge";
+  voiceId: string;
+  brainMode: "api" | "mailbox";
 }
 
 export interface HistoryItem {
@@ -86,6 +89,9 @@ export const fallbackSettings: SettingsState = {
   defaultActionId: "enhance-prompt",
   paused: false,
   enhancePromptMode: "auto",
+  voiceEngine: "kokoro",
+  voiceId: "kokoro-default",
+  brainMode: "api",
 };
 
 export function ActionIcon({ actionId }: { actionId: string }) {
@@ -135,9 +141,9 @@ export function TitleBar({
       </div>
       <div className="title-center" data-tauri-drag-region>
         <span className="title-icon" data-tauri-drag-region>
-          <img src="/logo.png" alt="MP" data-tauri-drag-region />
+          <img src="/ole-badge.svg" alt="" data-tauri-drag-region />
         </span>
-        <strong className="title-text" data-tauri-drag-region>MeshPrompt</strong>
+        <strong className="title-text" data-tauri-drag-region>Olé</strong>
       </div>
       <div className="window-controls-right" data-tauri-drag-region>
         <button className="mac-dot minimize" data-no-drag onClick={(e) => { e.stopPropagation(); void appWindow.minimize(); }} aria-label="Minimize"></button>
@@ -198,18 +204,16 @@ export async function generateWithCurrentProvider(
   selectedText: string,
   userInstruction = "",
 ) {
-  // Always enforce Groq for MeshPrompt!
-  const providerDef = getMeshPromptProvider("groq");
-  const key = await invoke<string | null>("get_provider_key", { provider: "groq" });
-  
-  if (!key) {
-    throw new Error("Groq API Key is not configured. Configure it in Provider Settings.");
+  const providerDef = getMeshPromptProvider(settings.provider.provider);
+  const key = providerDef.authMode === "api-key"
+    ? await invoke<string | null>("get_provider_key", { provider: providerDef.id })
+    : null;
+
+  if (providerDef.authMode === "api-key" && !key) {
+    throw new Error(`${providerDef.label} API key is not configured. Add it in AI Providers.`);
   }
 
-  const isGroq = settings.provider.provider === "groq";
-  const model = isGroq && settings.provider.model
-    ? settings.provider.model
-    : "llama-3.3-70b-versatile";
+  const model = settings.provider.model || providerDef.defaultModel;
 
   if (!selectedText.trim()) {
     throw new Error("Add text to enhance first.");
@@ -219,9 +223,9 @@ export async function generateWithCurrentProvider(
   const request = buildPromptActionRequest(action, { selectedText, userInstruction, settings });
   const client = new MeshPromptClient({
     provider: providerDef,
-    credentials: { apiKey: key ?? undefined, baseUrl: "https://api.groq.com/openai/v1" },
+    credentials: { apiKey: key ?? undefined, baseUrl: settings.provider.baseUrl },
     timeoutMs: settings.timeoutMs,
-    appName: "MeshPrompt",
+    appName: "Olé",
   });
   return client.generate({
     ...request.options,
@@ -238,5 +242,5 @@ export function errorMessage(error: unknown): string {
   }
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  return "MeshPrompt action failed.";
+  return "Olé action failed.";
 }

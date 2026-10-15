@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MeshUtility",
+  "productName": "Olé",
   "version": "1.0.10",
-  "identifier": "com.meshpilot.meshutility",
+  "identifier": "com.ole.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MeshUtility Suite",
+        "title": "Olé",
         "url": "/",
         "width": 1160,
         "height": 780,
@@ -46,7 +46,7 @@
       },
       {
         "label": "overlay",
-        "title": "MeshPrompt Overlay",
+        "title": "Olé",
         "url": "/overlay.html",
         "width": 480,
         "height": 180,
@@ -73,13 +73,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "publisher": "MeshPilot",
-    "copyright": "Copyright © 2026 MeshPilot"
+    "publisher": "Olé",
+    "copyright": "Copyright © 2026 Olé"
   },
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["meshvoice", "meshprompt"]
+        "schemes": ["ole"]
       }
     },
     "shell": {

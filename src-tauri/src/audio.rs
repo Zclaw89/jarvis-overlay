@@ -500,26 +500,22 @@ async fn transcribe(
     app_handle: &tauri::AppHandle,
     access_token: Option<String>,
 ) -> Result<(String, String), String> {
-    let (engine, api_key) = {
+    let engine = {
         let conn = crate::db::DB_CONN.lock().unwrap();
-        let engine = conn.query_row("SELECT value FROM settings WHERE key='engine'", [], |r| r.get::<_,String>(0))
-            .unwrap_or_else(|_| "local".into());
-        let api_key = conn.query_row("SELECT value FROM settings WHERE key='api_key'", [], |r| r.get::<_,String>(0))
-            .ok()
-            .and_then(|k| if k.trim().is_empty() { None } else { Some(k) });
-        (engine, api_key)
+        conn.query_row("SELECT value FROM settings WHERE key='engine'", [], |r| r.get::<_,String>(0))
+            .unwrap_or_else(|_| "local".into())
     };
 
     if engine == "cloud" {
-        if let Some(key) = &api_key {
-            return crate::transcription::transcribe_via_groq(samples, key).await
+        if let Ok(key) = crate::read_provider_key(app_handle, "groq") {
+            return crate::transcription::transcribe_via_groq(samples, &key).await
                 .map(|text| (text, "cloud".into()));
         }
         if let Some(token) = access_token.as_deref().map(str::trim).filter(|token| !token.is_empty()) {
             return crate::transcription::transcribe_via_meshpilot_cloud(samples, token).await
                 .map(|text| (text, "cloud".into()));
         }
-        return Err("Cloud mode requires a Groq API key in Settings or a MeshPilot sign-in.".to_string());
+        return Err("Cloud mode requires a Groq API key in Settings.".to_string());
     }
 
     // Read language setting

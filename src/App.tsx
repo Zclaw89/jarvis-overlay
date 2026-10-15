@@ -5,6 +5,7 @@ import {
   BookOpen,
   ClipboardList,
   Clock3,
+  Images,
   Info,
   KeyRound,
   Mic2,
@@ -20,6 +21,7 @@ import { DictionaryEditor } from './components/DictionaryEditor'
 import { MainApp as PromptApp } from './components/PromptApp'
 import { AppearanceView } from './components/AppearanceView'
 import { AboutView } from './components/AboutView'
+import { DossierView } from './components/DossierView'
 import { VersionWidget } from './components/VersionWidget'
 import { UpdateWidget } from './components/UpdateWidget'
 import { applyStoredTheme } from './lib/appearance'
@@ -31,6 +33,7 @@ import './App.css'
 type View =
   | 'voice-history'
   | 'voice-dictionary'
+  | 'dossier'
   | 'voice-settings'
   | 'prompt-enhancer'
   | 'prompt-actions'
@@ -53,14 +56,15 @@ interface NavGroup {
 
 const GROUPS: NavGroup[] = [
   {
-    title: 'Voice Dictation',
+    title: 'Olé',
     items: [
+      { id: 'dossier', label: 'Living Dossier', icon: <Images size={15} strokeWidth={1.8} /> },
       { id: 'voice-history', label: 'Dictation History', icon: <Clock3 size={15} strokeWidth={1.8} /> },
       { id: 'voice-dictionary', label: 'Custom Dictionary', icon: <BookOpen size={15} strokeWidth={1.8} /> },
     ],
   },
   {
-    title: 'Prompt Enhancer',
+    title: 'AI Tools',
     items: [
       { id: 'prompt-enhancer', label: 'Enhance Prompt', icon: <WandSparkles size={15} strokeWidth={1.8} /> },
       { id: 'prompt-actions', label: 'Prompt Actions', icon: <Sparkles size={15} strokeWidth={1.8} /> },
@@ -70,8 +74,8 @@ const GROUPS: NavGroup[] = [
   {
     title: 'Configuration',
     items: [
-      { id: 'voice-settings', label: 'Voice Settings', icon: <Mic2 size={15} strokeWidth={1.8} /> },
-      { id: 'prompt-providers', label: 'AI Providers', icon: <KeyRound size={15} strokeWidth={1.8} /> },
+      { id: 'voice-settings', label: 'Voice & Hotkey', icon: <Mic2 size={15} strokeWidth={1.8} /> },
+      { id: 'prompt-providers', label: 'API Keys', icon: <KeyRound size={15} strokeWidth={1.8} /> },
       { id: 'prompt-settings', label: 'Enhancer Settings', icon: <Settings2 size={15} strokeWidth={1.8} /> },
       { id: 'appearance', label: 'Appearance', icon: <Palette size={15} strokeWidth={1.8} /> },
       { id: 'about', label: 'About', icon: <Info size={15} strokeWidth={1.8} /> },
@@ -82,9 +86,9 @@ const GROUPS: NavGroup[] = [
 const ALL_VIEWS = GROUPS.flatMap((group) => group.items.map((item) => item.id))
 
 function getInitialView(): View {
-  if (typeof window === 'undefined') return 'voice-history'
+  if (typeof window === 'undefined') return 'dossier'
   const candidate = new URLSearchParams(window.location.search).get('view')
-  return ALL_VIEWS.includes(candidate as View) ? candidate as View : 'voice-history'
+  return ALL_VIEWS.includes(candidate as View) ? candidate as View : 'dossier'
 }
 
 function handleBarMouseDown(e: React.MouseEvent<HTMLDivElement>) {
@@ -212,8 +216,8 @@ export default function App() {
         </div>
 
         <span className="utility-title-center" data-tauri-drag-region>
-          <img src="/logo-prompt.png" alt="" width="18" height="18" />
-          MeshUtility Suite
+          <img src="/ole-badge.svg" alt="" width="18" height="18" />
+          Olé
         </span>
 
         <div className="utility-window-controls" data-tauri-drag-region>
@@ -283,6 +287,9 @@ export default function App() {
         </aside>
 
         <main className="utility-main">
+          <div style={{ display: view === 'dossier' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+            <DossierView />
+          </div>
           <div style={{ display: view === 'voice-history' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
             <Dashboard />
           </div>

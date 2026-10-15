@@ -2680,36 +2680,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "meshutility"
-version = "1.0.8"
-dependencies = [
- "arboard",
- "chrono",
- "cpal",
- "dirs 5.0.1",
- "enigo",
- "flate2",
- "futures-util",
- "once_cell",
- "regex",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-shell",
- "tauri-plugin-single-instance",
- "tokio",
- "transcribe-rs",
- "whisper-rs",
- "windows 0.58.0",
-]
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3183,6 +3153,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6c8bb09a4a2b1d668170cfe0a7d5bc103f8999fb316c98099b6a9939c9f2e79d"
 dependencies = [
  "cc",
+]
+
+[[package]]
+name = "ole"
+version = "1.0.10"
+dependencies = [
+ "arboard",
+ "base64 0.22.1",
+ "chrono",
+ "cpal",
+ "dirs 5.0.1",
+ "enigo",
+ "flate2",
+ "futures-util",
+ "once_cell",
+ "regex",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-shell",
+ "tauri-plugin-single-instance",
+ "tokio",
+ "transcribe-rs",
+ "whisper-rs",
+ "windows 0.58.0",
 ]
 
 [[package]]

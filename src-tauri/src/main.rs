@@ -11,7 +11,9 @@ use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use std::process::Command;
+use std::time::Duration;
 
 use tauri::{
     Manager, Emitter, PhysicalPosition, AppHandle, State, LogicalSize, Size,
@@ -24,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 const MAX_HISTORY: usize = 10;
 const WIDGET_BOTTOM_MARGIN_PX: u32 = 96;
+const KOKORO_HELPER_URL: &str = "http://127.0.0.1:8765";
 
 // ─── Shared State ────────────────────────────────────────────────────────────
 
@@ -72,10 +75,28 @@ struct SettingsState {
     paused: bool,
     #[serde(default = "default_enhance_prompt_mode")]
     enhance_prompt_mode: String,
+    #[serde(default = "default_voice_engine")]
+    voice_engine: String,
+    #[serde(default = "default_voice_id")]
+    voice_id: String,
+    #[serde(default = "default_brain_mode")]
+    brain_mode: String,
 }
 
 fn default_enhance_prompt_mode() -> String {
     "auto".to_string()
+}
+
+fn default_voice_engine() -> String {
+    "kokoro".to_string()
+}
+
+fn default_voice_id() -> String {
+    "kokoro-default".to_string()
+}
+
+fn default_brain_mode() -> String {
+    "api".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,6 +120,35 @@ struct PromptAppStatePayload {
     key_status: BTreeMap<String, bool>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MailboxPathsPayload {
+    root: String,
+    inbox: String,
+    outbox: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MailboxJobPayload {
+    id: String,
+    inbox_dir: String,
+    outbox_dir: String,
+    screenshot_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DossierMeta {
+    id: String,
+    created_at: String,
+    note: String,
+    screenshot_path: String,
+    screenshot_hash: String,
+    source_title: Option<String>,
+    analysis: Option<String>,
+}
+
 fn default_settings() -> SettingsState {
     SettingsState {
         provider: ProviderSettings {
@@ -119,6 +169,9 @@ fn default_settings() -> SettingsState {
         default_action_id: "enhance-prompt".to_string(),
         paused: false,
         enhance_prompt_mode: "auto".to_string(),
+        voice_engine: default_voice_engine(),
+        voice_id: default_voice_id(),
+        brain_mode: default_brain_mode(),
     }
 }
 
@@ -131,6 +184,146 @@ fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|err| format!("Failed to resolve app data directory: {err}"))?;
     fs::create_dir_all(&dir).map_err(|err| format!("Failed to create app data directory: {err}"))?;
     Ok(dir)
+}
+
+fn mailbox_root() -> Result<PathBuf, String> {
+    let documents = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Could not find the user's Documents folder.".to_string())?;
+    Ok(documents.join("OleMailbox"))
+}
+
+fn dossier_root() -> Result<PathBuf, String> {
+    let documents = dirs::document_dir()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| "Could not find the user's Documents folder.".to_string())?;
+    Ok(documents.join("OleDossier"))
+}
+
+fn dossier_items_dir() -> Result<PathBuf, String> {
+    let root = dossier_root()?;
+    for table in ["items", "ole_containers", "source_artifacts", "ole_artifact_links"] {
+        fs::create_dir_all(root.join(table)).map_err(|err| format!("Failed to create dossier table folder: {err}"))?;
+    }
+    let dir = root.join("items");
+    fs::create_dir_all(&dir).map_err(|err| format!("Failed to create dossier folder: {err}"))?;
+    Ok(dir)
+}
+
+fn new_dossier_item_id() -> String {
+    format!(
+        "ole-{}-{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S%3f"),
+        std::process::id()
+    )
+}
+
+fn hash_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn read_dossier_meta(path: &std::path::Path) -> Result<DossierMeta, String> {
+    let raw = fs::read_to_string(path).map_err(|err| format!("Failed to read dossier metadata: {err}"))?;
+    serde_json::from_str(&raw).map_err(|err| format!("Failed to parse dossier metadata: {err}"))
+}
+
+fn write_dossier_meta(item_dir: &std::path::Path, meta: &DossierMeta) -> Result<(), String> {
+    fs::write(
+        item_dir.join("meta.json"),
+        serde_json::to_string_pretty(meta).map_err(|err| format!("Failed to encode dossier metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write dossier metadata: {err}"))
+}
+
+fn ensure_mailbox_dirs_at(root: &std::path::Path) -> Result<(PathBuf, PathBuf), String> {
+    let inbox = root.join("inbox");
+    let outbox = root.join("outbox");
+    fs::create_dir_all(&inbox).map_err(|err| format!("Failed to create mailbox inbox: {err}"))?;
+    fs::create_dir_all(&outbox).map_err(|err| format!("Failed to create mailbox outbox: {err}"))?;
+    Ok((inbox, outbox))
+}
+
+fn new_mailbox_job_id() -> String {
+    format!(
+        "job-{}-{}",
+        chrono::Utc::now().format("%Y%m%d%H%M%S%3f"),
+        std::process::id()
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn write_mailbox_job_at(
+    root: &std::path::Path,
+    request: &str,
+    screenshot: Option<&[u8]>,
+) -> Result<MailboxJobPayload, String> {
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(root)?;
+    let id = new_mailbox_job_id();
+    let inbox_dir = inbox_root.join(&id);
+    let outbox_dir = outbox_root.join(&id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to create mailbox job: {err}"))?;
+    fs::create_dir_all(&outbox_dir).map_err(|err| format!("Failed to create mailbox reply folder: {err}"))?;
+    fs::write(inbox_dir.join("request.txt"), request).map_err(|err| format!("Failed to write mailbox request: {err}"))?;
+
+    let screenshot_path = if let Some(bytes) = screenshot {
+        let path = inbox_dir.join("screenshot.png");
+        fs::write(&path, bytes).map_err(|err| format!("Failed to write mailbox screenshot: {err}"))?;
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let meta = serde_json::json!({
+        "id": id,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+        "hasScreenshot": screenshot_path.is_some(),
+    });
+    fs::write(
+        inbox_dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).map_err(|err| format!("Failed to encode mailbox metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox metadata: {err}"))?;
+
+    Ok(MailboxJobPayload {
+        id,
+        inbox_dir: inbox_dir.to_string_lossy().to_string(),
+        outbox_dir: outbox_dir.to_string_lossy().to_string(),
+        screenshot_path,
+    })
+}
+
+fn read_mailbox_reply_at(root: &std::path::Path, job_id: &str) -> Result<Option<String>, String> {
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(root)?;
+    let safe_id = job_id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid mailbox job id.".to_string());
+    }
+
+    let outbox_dir = outbox_root.join(safe_id);
+    let reply_path = ["reply.txt", "reply.md"]
+        .iter()
+        .map(|name| outbox_dir.join(name))
+        .find(|path| path.exists());
+
+    let Some(reply_path) = reply_path else {
+        return Ok(None);
+    };
+
+    let reply = fs::read_to_string(&reply_path).map_err(|err| format!("Failed to read mailbox reply: {err}"))?;
+    let done = serde_json::json!({
+        "id": safe_id,
+        "replyPath": reply_path.to_string_lossy(),
+        "completedAt": chrono::Utc::now().to_rfc3339(),
+    });
+    let inbox_dir = inbox_root.join(safe_id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to mark mailbox job done: {err}"))?;
+    fs::write(
+        inbox_dir.join("done.json"),
+        serde_json::to_string_pretty(&done).map_err(|err| format!("Failed to encode mailbox done marker: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox done marker: {err}"))?;
+    Ok(Some(reply))
 }
 
 fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -187,7 +380,7 @@ fn write_prompt_history(app: &AppHandle, history: &[HistoryItem]) -> Result<(), 
     fs::write(path, raw).map_err(|err| format!("Failed to write history: {err}"))
 }
 
-fn read_provider_key(app: &AppHandle, provider: &str) -> Result<String, String> {
+pub(crate) fn read_provider_key(app: &AppHandle, provider: &str) -> Result<String, String> {
     let encrypted = fs::read(key_path(app, provider)?).map_err(|err| format!("API key is not configured: {err}"))?;
     let decrypted = decrypt_secret(&encrypted)?;
     String::from_utf8(decrypted).map_err(|err| format!("Stored API key is invalid UTF-8: {err}"))
@@ -242,8 +435,8 @@ fn decrypt_secret(bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(bytes.to_vec())
 }
 
-fn provider_ids() -> [&'static str; 7] {
-    ["xai", "openai", "anthropic", "gemini", "openrouter", "ollama", "groq"]
+fn provider_ids() -> [&'static str; 8] {
+    ["xai", "openai", "anthropic", "gemini", "openrouter", "ollama", "groq", "elevenlabs"]
 }
 
 fn build_key_status(app: &AppHandle) -> BTreeMap<String, bool> {
@@ -391,6 +584,28 @@ fn hide_overlay(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn set_widget_click_through(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    widget
+        .set_ignore_cursor_events(enabled)
+        .map_err(|err| format!("Failed to update widget click-through: {err}"))
+}
+
+#[tauri::command]
+fn open_widget_chat(app: AppHandle) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    widget
+        .set_ignore_cursor_events(false)
+        .map_err(|err| format!("Failed to enable widget clicks: {err}"))?;
+    show_widget_window(&app)?;
+    app.emit("ole://open-chat", ()).map_err(|err| format!("Failed to open chat: {err}"))
+}
+
+#[tauri::command]
 fn resize_overlay(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
     let window = app
         .get_webview_window("overlay")
@@ -424,9 +639,8 @@ async fn proxy_request(
     headers: std::collections::HashMap<String, String>,
     body: String,
 ) -> Result<(u16, String), String> {
-    // ENFORCE API LOCK: Restrict Prompt Enhancer requests strictly to Groq
-    if !url.starts_with("https://api.groq.com/") {
-        return Err("Security Violation: Only Groq API is allowed for prompt enhancement.".to_string());
+    if !is_allowed_provider_url(&url) {
+        return Err("Requests are limited to configured AI providers and local Ollama.".to_string());
     }
 
     let client = reqwest::Client::new();
@@ -451,6 +665,612 @@ async fn proxy_request(
     let text = res.text().await.map_err(|e| e.to_string())?;
 
     Ok((status, text))
+}
+
+fn is_allowed_provider_url(url: &str) -> bool {
+    const ALLOWED_PREFIXES: [&str; 8] = [
+        "https://api.openai.com/",
+        "https://api.anthropic.com/",
+        "https://generativelanguage.googleapis.com/",
+        "https://api.groq.com/",
+        "https://api.x.ai/",
+        "https://openrouter.ai/",
+        "http://localhost:",
+        "http://127.0.0.1:",
+    ];
+    ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
+}
+
+#[tauri::command]
+fn get_mailbox_paths() -> Result<MailboxPathsPayload, String> {
+    let root = mailbox_root()?;
+    let (inbox, outbox) = ensure_mailbox_dirs_at(&root)?;
+    Ok(MailboxPathsPayload {
+        root: root.to_string_lossy().to_string(),
+        inbox: inbox.to_string_lossy().to_string(),
+        outbox: outbox.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
+fn create_mailbox_job(request: String, include_screenshot: bool) -> Result<MailboxJobPayload, String> {
+    let root = mailbox_root()?;
+    let id = new_mailbox_job_id();
+    let (inbox_root, outbox_root) = ensure_mailbox_dirs_at(&root)?;
+    let inbox_dir = inbox_root.join(&id);
+    let outbox_dir = outbox_root.join(&id);
+    fs::create_dir_all(&inbox_dir).map_err(|err| format!("Failed to create mailbox job: {err}"))?;
+    fs::create_dir_all(&outbox_dir).map_err(|err| format!("Failed to create mailbox reply folder: {err}"))?;
+
+    let screenshot_path = if include_screenshot {
+        let path = inbox_dir.join("screenshot.png");
+        capture_screenshot_to_file(&path)?;
+        Some(path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    fs::write(inbox_dir.join("request.txt"), request.trim())
+        .map_err(|err| format!("Failed to write mailbox request: {err}"))?;
+    let meta = serde_json::json!({
+        "id": id,
+        "createdAt": chrono::Utc::now().to_rfc3339(),
+        "hasScreenshot": screenshot_path.is_some(),
+    });
+    fs::write(
+        inbox_dir.join("meta.json"),
+        serde_json::to_string_pretty(&meta).map_err(|err| format!("Failed to encode mailbox metadata: {err}"))?,
+    )
+    .map_err(|err| format!("Failed to write mailbox metadata: {err}"))?;
+
+    Ok(MailboxJobPayload {
+        id,
+        inbox_dir: inbox_dir.to_string_lossy().to_string(),
+        outbox_dir: outbox_dir.to_string_lossy().to_string(),
+        screenshot_path,
+    })
+}
+
+#[tauri::command]
+fn read_mailbox_reply(job_id: String) -> Result<Option<String>, String> {
+    read_mailbox_reply_at(&mailbox_root()?, &job_id)
+}
+
+#[tauri::command]
+fn flash_ole_screen() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $f=New-Object System.Windows.Forms.Form; $f.FormBorderStyle='None'; $f.StartPosition='Manual'; $f.Bounds=$b; $f.TopMost=$true; $f.BackColor=[System.Drawing.Color]::White; $f.Opacity=0.45; $t=New-Object System.Windows.Forms.Timer; $t.Interval=120; $t.Add_Tick({$t.Stop();$f.Close()}); $t.Start(); [void]$f.ShowDialog()";
+        Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .status()
+            .map_err(|err| format!("Failed to flash screen: {err}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn create_dossier_item(note: String) -> Result<DossierMeta, String> {
+    let id = new_dossier_item_id();
+    let item_dir = dossier_items_dir()?.join(&id);
+    fs::create_dir_all(&item_dir).map_err(|err| format!("Failed to create dossier item: {err}"))?;
+    let screenshot_path = item_dir.join("screenshot.png");
+    capture_screenshot_to_file(&screenshot_path)?;
+    let screenshot_bytes = fs::read(&screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
+    let source_title = foreground_window_title();
+    let captured_at = chrono::Utc::now().to_rfc3339();
+    let screenshot_hash = hash_bytes(&screenshot_bytes);
+    let meta = DossierMeta {
+        id: id.clone(),
+        created_at: captured_at.clone(),
+        note,
+        screenshot_path: screenshot_path.to_string_lossy().to_string(),
+        screenshot_hash: screenshot_hash.clone(),
+        source_title: source_title.clone(),
+        analysis: None,
+    };
+    write_dossier_meta(&item_dir, &meta)?;
+    let metadata = serde_json::json!({
+        "capture_type": "screenshot",
+        "referring_app": meta.source_title.clone().unwrap_or_else(|| "UNVERIFIED".to_string()),
+    });
+    write_android_compatible_dossier_files(&id, &meta, &captured_at, &screenshot_hash, metadata)?;
+    Ok(meta)
+}
+
+fn write_android_compatible_dossier_files(
+    id: &str,
+    meta: &DossierMeta,
+    captured_at: &str,
+    screenshot_hash: &str,
+    metadata: serde_json::Value,
+) -> Result<(), String> {
+    let root = dossier_root()?;
+    fs::create_dir_all(root.join("ole_containers")).map_err(|err| format!("Failed to create ole_containers: {err}"))?;
+    fs::create_dir_all(root.join("source_artifacts")).map_err(|err| format!("Failed to create source_artifacts: {err}"))?;
+    fs::create_dir_all(root.join("ole_artifact_links")).map_err(|err| format!("Failed to create ole_artifact_links: {err}"))?;
+    let container = serde_json::json!({
+        "id": id,
+        "title": meta.note,
+        "createdAt": captured_at,
+    });
+    let artifact = serde_json::json!({
+        "id": id,
+        "filePath": meta.screenshot_path,
+        "sha256": screenshot_hash,
+        "capturedAt": captured_at,
+        "metadataJson": metadata.to_string(),
+    });
+    let link = serde_json::json!({
+        "containerId": id,
+        "artifactId": id,
+        "linkedAt": captured_at,
+    });
+    fs::write(root.join("ole_containers").join(format!("{id}.json")), serde_json::to_string_pretty(&container).unwrap())
+        .map_err(|err| format!("Failed to write ole_containers row: {err}"))?;
+    fs::write(root.join("source_artifacts").join(format!("{id}.json")), serde_json::to_string_pretty(&artifact).unwrap())
+        .map_err(|err| format!("Failed to write source_artifacts row: {err}"))?;
+    fs::write(root.join("ole_artifact_links").join(format!("{id}.json")), serde_json::to_string_pretty(&link).unwrap())
+        .map_err(|err| format!("Failed to write ole_artifact_links row: {err}"))
+}
+
+#[tauri::command]
+fn list_dossier_items() -> Result<Vec<DossierMeta>, String> {
+    let dir = dossier_items_dir()?;
+    let mut items = Vec::new();
+    for entry in fs::read_dir(dir).map_err(|err| format!("Failed to read dossier folder: {err}"))? {
+        let entry = entry.map_err(|err| format!("Failed to read dossier item: {err}"))?;
+        let meta_path = entry.path().join("meta.json");
+        if meta_path.exists() {
+            if let Ok(meta) = read_dossier_meta(&meta_path) {
+                items.push(meta);
+            }
+        }
+    }
+    items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+    Ok(items)
+}
+
+#[tauri::command]
+fn attach_dossier_analysis(id: String, analysis: String) -> Result<(), String> {
+    let safe_id = id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid dossier item id.".to_string());
+    }
+    let item_dir = dossier_items_dir()?.join(safe_id);
+    let meta_path = item_dir.join("meta.json");
+    let mut meta = read_dossier_meta(&meta_path)?;
+    meta.analysis = Some(analysis);
+    write_dossier_meta(&item_dir, &meta)
+}
+
+#[tauri::command]
+fn read_dossier_screenshot_base64(id: String) -> Result<String, String> {
+    let safe_id = id.trim();
+    if safe_id.is_empty() || safe_id.contains('/') || safe_id.contains('\\') {
+        return Err("Invalid dossier item id.".to_string());
+    }
+    let meta = read_dossier_meta(&dossier_items_dir()?.join(safe_id).join("meta.json"))?;
+    let bytes = fs::read(meta.screenshot_path).map_err(|err| format!("Failed to read dossier screenshot: {err}"))?;
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
+}
+
+#[tauri::command]
+fn import_dossier_file(file_name: String, mime: String, data_base64: String) -> Result<DossierMeta, String> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data_base64)
+        .map_err(|err| format!("Failed to decode dropped file: {err}"))?;
+    let id = new_dossier_item_id();
+    let item_dir = dossier_items_dir()?.join(&id);
+    fs::create_dir_all(&item_dir).map_err(|err| format!("Failed to create dossier item: {err}"))?;
+    let safe_name = file_name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') { ch } else { '_' })
+        .collect::<String>();
+    let stored_path = item_dir.join(if safe_name.trim().is_empty() { "drop.bin" } else { safe_name.trim() });
+    fs::write(&stored_path, &bytes).map_err(|err| format!("Failed to write dropped file: {err}"))?;
+    let captured_at = chrono::Utc::now().to_rfc3339();
+    let sha256 = hash_bytes(&bytes);
+    let meta = DossierMeta {
+        id: id.clone(),
+        created_at: captured_at.clone(),
+        note: "Send to Olé".to_string(),
+        screenshot_path: stored_path.to_string_lossy().to_string(),
+        screenshot_hash: sha256.clone(),
+        source_title: None,
+        analysis: None,
+    };
+    write_dossier_meta(&item_dir, &meta)?;
+    let metadata = serde_json::json!({
+        "capture_type": "share",
+        "share_mime": mime,
+        "share_extra_text": "",
+        "referring_app": "UNVERIFIED",
+        "source_uri": "",
+        "received_at": captured_at,
+    });
+    write_android_compatible_dossier_files(&id, &meta, &captured_at, &sha256, metadata)?;
+    Ok(meta)
+}
+
+fn capture_screenshot_to_file(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let path_arg = path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); $bmp.Save('{path_arg}',[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $bmp.Dispose()"
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to start screenshot capture: {err}"))?;
+        if status.success() && path.exists() {
+            Ok(())
+        } else {
+            Err("Could not capture the screen.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("Screenshot capture is available in the Windows app.".to_string())
+    }
+}
+
+fn foreground_window_title() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = "$sig='[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow(); [DllImport(\"user32.dll\", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);'; Add-Type -MemberDefinition $sig -Name Native -Namespace Win32; $b=New-Object System.Text.StringBuilder 512; $h=[Win32.Native]::GetForegroundWindow(); [void][Win32.Native]::GetWindowText($h,$b,$b.Capacity); $b.ToString()";
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if title.is_empty() { None } else { Some(title) }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TestVoiceRequest {
+    engine: String,
+    voice_id: String,
+    text: String,
+}
+
+#[tauri::command]
+async fn test_voice(app: AppHandle, request: TestVoiceRequest) -> Result<String, String> {
+    let engine = request.engine.trim().to_lowercase();
+    let text = if request.text.trim().is_empty() {
+        "Hello, I am ready.".to_string()
+    } else {
+        request.text.trim().to_string()
+    };
+
+    match engine.as_str() {
+        "kokoro" => synthesize_kokoro_tts(&app, &request.voice_id, &text).await,
+        "edge" => speak_with_local_windows_voice(&text).await,
+        "openai" => {
+            let key = read_provider_key(&app, "openai")?;
+            synthesize_openai_tts(&key, &request.voice_id, &text).await
+        }
+        "elevenlabs" => {
+            let key = read_provider_key(&app, "elevenlabs")?;
+            synthesize_elevenlabs_tts(&key, &request.voice_id, &text).await
+        }
+        _ => Err("Choose Local (Kokoro), ChatGPT / OpenAI, or ElevenLabs.".to_string()),
+    }
+}
+
+async fn synthesize_kokoro_tts(app: &AppHandle, voice_id: &str, text: &str) -> Result<String, String> {
+    let helper_result = match ensure_kokoro_helper_started(app).await {
+        Ok(()) => request_kokoro_helper_speech(voice_id, text).await,
+        Err(err) => Err(err),
+    };
+
+    match helper_result {
+        Ok(bytes) => play_audio_bytes("ole-kokoro.wav", &bytes).await.map(|_| "Kokoro voice test played.".to_string()),
+        Err(err) => {
+            let fallback = speak_with_local_windows_voice(text).await?;
+            Ok(format!("Kokoro helper was not ready ({err}). {fallback}"))
+        }
+    }
+}
+
+async fn request_kokoro_helper_speech(voice_id: &str, text: &str) -> Result<Vec<u8>, String> {
+    let body = serde_json::json!({
+        "model": "kokoro",
+        "voice": voice_id,
+        "input": text,
+        "format": "wav"
+    });
+    let bytes = reqwest::Client::new()
+        .post(format!("{KOKORO_HELPER_URL}/v1/audio/speech"))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("Kokoro helper request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("Kokoro helper returned an error: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("Kokoro helper audio failed: {err}"))?;
+    Ok(bytes.to_vec())
+}
+
+async fn ensure_kokoro_helper_started(app: &AppHandle) -> Result<(), String> {
+    if kokoro_helper_healthy().await {
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let helper_dir = app_dir(app)?.join("kokoro-helper");
+        fs::create_dir_all(&helper_dir).map_err(|err| format!("Failed to create Kokoro helper folder: {err}"))?;
+        fs::write(helper_dir.join("kokoro_server.py"), KOKORO_SERVER_PY)
+            .map_err(|err| format!("Failed to write Kokoro server: {err}"))?;
+        fs::write(helper_dir.join("start-kokoro.ps1"), KOKORO_START_PS1)
+            .map_err(|err| format!("Failed to write Kokoro starter: {err}"))?;
+
+        let script = helper_dir.join("start-kokoro.ps1");
+        let helper_arg = helper_dir.to_string_lossy().to_string();
+        let script_arg = script.to_string_lossy().to_string();
+        let mut command = Command::new("powershell");
+        command.args([
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_arg,
+            "-Root",
+            &helper_arg,
+        ]);
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        command.spawn().map_err(|err| format!("Failed to start Kokoro helper: {err}"))?;
+
+        for _ in 0..90 {
+            if kokoro_helper_healthy().await {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        Err("Kokoro helper is still installing. Try Test voice again in a minute.".to_string())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("Kokoro helper starts from the Windows app.".to_string())
+    }
+}
+
+async fn kokoro_helper_healthy() -> bool {
+    let Ok(client) = reqwest::Client::builder().timeout(Duration::from_millis(700)).build() else {
+        return false;
+    };
+    client
+        .get(format!("{KOKORO_HELPER_URL}/health"))
+        .send()
+        .await
+        .map(|response| response.status().is_success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+const KOKORO_START_PS1: &str = r#"
+param([string]$Root)
+$ErrorActionPreference = "Stop"
+
+New-Item -ItemType Directory -Force -Path $Root | Out-Null
+$UvDir = Join-Path $Root "uv"
+$UvExe = Join-Path $UvDir "uv.exe"
+$Venv = Join-Path $Root ".venv"
+$Server = Join-Path $Root "kokoro_server.py"
+$Model = Join-Path $Root "kokoro-v1.0.int8.onnx"
+$Voices = Join-Path $Root "voices-v1.0.bin"
+
+if (!(Test-Path $UvExe)) {
+  New-Item -ItemType Directory -Force -Path $UvDir | Out-Null
+  $Zip = Join-Path $Root "uv.zip"
+  Invoke-WebRequest -Uri "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" -OutFile $Zip
+  Expand-Archive -Path $Zip -DestinationPath $UvDir -Force
+  $Found = Get-ChildItem -Path $UvDir -Recurse -Filter "uv.exe" | Select-Object -First 1
+  if ($null -eq $Found) { throw "uv.exe was not found after download." }
+  Copy-Item $Found.FullName $UvExe -Force
+}
+
+if (!(Test-Path $Model)) {
+  Invoke-WebRequest -Uri "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx" -OutFile $Model
+}
+if (!(Test-Path $Voices)) {
+  Invoke-WebRequest -Uri "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin" -OutFile $Voices
+}
+
+if (!(Test-Path (Join-Path $Venv "Scripts\python.exe"))) {
+  & $UvExe venv $Venv --python 3.12 --seed
+}
+& $UvExe pip install --python (Join-Path $Venv "Scripts\python.exe") --upgrade kokoro-onnx soundfile
+& (Join-Path $Venv "Scripts\python.exe") $Server --root $Root --port 8765
+"#;
+
+#[cfg(target_os = "windows")]
+const KOKORO_SERVER_PY: &str = r#"
+import argparse
+import io
+import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import soundfile as sf
+from kokoro_onnx import Kokoro
+
+VOICE_MAP = {
+    "kokoro-default": "af_sarah",
+    "kokoro-warm": "af_heart",
+    "kokoro-clear": "am_adam",
+}
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--root", required=True)
+parser.add_argument("--port", type=int, default=8765)
+args = parser.parse_args()
+
+root = Path(args.root)
+kokoro = Kokoro(str(root / "kokoro-v1.0.int8.onnx"), str(root / "voices-v1.0.bin"))
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        return
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/v1/audio/speech":
+            self.send_response(404)
+            self.end_headers()
+            return
+        length = int(self.headers.get("content-length", "0"))
+        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        text = (data.get("input") or "Hello from Kokoro.").strip()
+        voice = VOICE_MAP.get(data.get("voice"), "af_sarah")
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=1.0, lang="en-us")
+        audio = io.BytesIO()
+        sf.write(audio, samples, sample_rate, format="WAV")
+        payload = audio.getvalue()
+        self.send_response(200)
+        self.send_header("content-type", "audio/wav")
+        self.send_header("content-length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+"#;
+
+async fn speak_with_local_windows_voice(text: &str) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak({:?}); $s.Dispose()",
+            text
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to start local voice: {err}"))?;
+        if status.success() {
+            Ok("Played with this PC's local voice.".to_string())
+        } else {
+            Err("Local voice test failed on this PC.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = text;
+        Ok("Local voice test is available in the Windows app.".to_string())
+    }
+}
+
+async fn synthesize_openai_tts(api_key: &str, voice_id: &str, text: &str) -> Result<String, String> {
+    let voice = if voice_id.trim().is_empty() || voice_id == "openai-alloy" {
+        "alloy"
+    } else {
+        voice_id.trim().strip_prefix("openai-").unwrap_or(voice_id.trim())
+    };
+    let body = serde_json::json!({
+        "model": "gpt-4o-mini-tts",
+        "voice": voice,
+        "input": text,
+        "format": "mp3"
+    });
+    let bytes = reqwest::Client::new()
+        .post("https://api.openai.com/v1/audio/speech")
+        .bearer_auth(api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("OpenAI voice request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("OpenAI voice request failed: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("OpenAI voice response failed: {err}"))?;
+    play_audio_bytes("ole-openai-tts.mp3", &bytes).await
+}
+
+async fn synthesize_elevenlabs_tts(api_key: &str, voice_id: &str, text: &str) -> Result<String, String> {
+    let voice = if voice_id.trim().is_empty() || voice_id == "eleven-rachel" {
+        "21m00Tcm4TlvDq8ikWAM"
+    } else {
+        voice_id.trim().strip_prefix("eleven-").unwrap_or(voice_id.trim())
+    };
+    let url = format!("https://api.elevenlabs.io/v1/text-to-speech/{voice}");
+    let body = serde_json::json!({
+        "text": text,
+        "model_id": "eleven_multilingual_v2"
+    });
+    let bytes = reqwest::Client::new()
+        .post(url)
+        .header("xi-api-key", api_key.trim())
+        .json(&body)
+        .send()
+        .await
+        .map_err(|err| format!("ElevenLabs voice request failed: {err}"))?
+        .error_for_status()
+        .map_err(|err| format!("ElevenLabs voice request failed: {err}"))?
+        .bytes()
+        .await
+        .map_err(|err| format!("ElevenLabs voice response failed: {err}"))?;
+    play_audio_bytes("ole-elevenlabs-tts.mp3", &bytes).await
+}
+
+async fn play_audio_bytes(filename: &str, bytes: &[u8]) -> Result<String, String> {
+    let path = std::env::temp_dir().join(filename);
+    fs::write(&path, bytes).map_err(|err| format!("Failed to save voice test audio: {err}"))?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let path_string = path.to_string_lossy().replace('\'', "''");
+        let script = format!(
+            "Add-Type -AssemblyName presentationCore; $p = New-Object System.Windows.Media.MediaPlayer; $p.Open([Uri]'{path_string}'); $p.Play(); Start-Sleep -Seconds 5; $p.Close()"
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .status()
+            .map_err(|err| format!("Failed to play voice test audio: {err}"))?;
+        if status.success() {
+            Ok("Voice test played.".to_string())
+        } else {
+            Err("Voice test audio was created but could not be played.".to_string())
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(format!("Voice test audio was created at {}.", path.display()))
+    }
 }
 
 #[tauri::command]
@@ -522,7 +1342,7 @@ fn ensure_autostart_enabled() {
         "add",
         r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
         "/v",
-        "MeshUtility",
+        "Olé",
         "/t",
         "REG_SZ",
         "/d",
@@ -554,7 +1374,7 @@ fn set_launch_at_startup(_app: &AppHandle, enabled: bool) -> Result<(), String> 
                 "add",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/v",
-                "MeshUtility",
+                "Olé",
                 "/t",
                 "REG_SZ",
                 "/d",
@@ -566,7 +1386,7 @@ fn set_launch_at_startup(_app: &AppHandle, enabled: bool) -> Result<(), String> 
                 "delete",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
                 "/v",
-                "MeshUtility",
+                "Olé",
                 "/f",
             ]);
         }
@@ -626,6 +1446,54 @@ fn show_widget_window(app: &AppHandle) -> Result<(), String> {
         .ok_or_else(|| "Widget window is unavailable.".to_string())?;
     widget.show().map_err(|err| format!("Failed to show widget: {err}"))?;
     Ok(())
+}
+
+#[tauri::command]
+fn dock_ole_widget(app: AppHandle, side: String, vertical: f64) -> Result<(), String> {
+    dock_widget_to_edge(&app, &side, vertical)
+}
+
+#[tauri::command]
+fn snap_ole_widget_to_edge(app: AppHandle, side: String) -> Result<f64, String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    let monitor = widget.current_monitor()
+        .map_err(|err| format!("Failed to read widget monitor: {err}"))?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "No monitor found for widget.".to_string())?;
+    let area = monitor.work_area();
+    let size = widget.outer_size().map_err(|err| format!("Failed to read widget size: {err}"))?;
+    let pos = widget.outer_position().map_err(|err| format!("Failed to read widget position: {err}"))?;
+    let max_y = area.size.height.saturating_sub(size.height).max(1);
+    let relative_y = pos.y.saturating_sub(area.position.y) as f64;
+    let vertical = ((relative_y / max_y as f64) * 100.0).clamp(0.0, 100.0);
+    dock_widget_to_edge(&app, &side, vertical)?;
+    db::set_setting("ole_dock_y".to_string(), format!("{vertical:.0}"));
+    Ok(vertical)
+}
+
+fn dock_widget_to_edge(app: &AppHandle, side: &str, vertical: f64) -> Result<(), String> {
+    let widget = app
+        .get_webview_window("widget")
+        .ok_or_else(|| "Widget window is unavailable.".to_string())?;
+    let monitor = widget.current_monitor()
+        .map_err(|err| format!("Failed to read widget monitor: {err}"))?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "No monitor found for widget.".to_string())?;
+    let area = monitor.work_area();
+    let size = widget.outer_size().unwrap_or_else(|_| tauri::PhysicalSize::new(84, 124));
+    let margin = 8_i32;
+    let x = if side == "left" {
+        area.position.x + margin
+    } else {
+        area.position.x + area.size.width.saturating_sub(size.width) as i32 - margin
+    };
+    let max_y = area.size.height.saturating_sub(size.height);
+    let y = area.position.y + ((max_y as f64) * (vertical.clamp(0.0, 100.0) / 100.0)) as i32;
+    widget
+        .set_position(PhysicalPosition::new(x, y))
+        .map_err(|err| format!("Failed to dock Olé badge: {err}"))
 }
 
 #[tauri::command]
@@ -1007,12 +1875,12 @@ fn reregister_global_shortcut(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> {
     let client = reqwest::Client::builder()
-        .user_agent("MeshPilot-Updater")
+        .user_agent("Ole-Updater")
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
     let res = client
-        .get("https://api.github.com/repos/MeshPilot-in/MeshUtility/releases")
+        .get("https://api.github.com/repos/Zclaw89/jarvis-overlay/releases")
         .send()
         .await;
 
@@ -1037,7 +1905,7 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
     }
 
     if use_fallback {
-        let fallback_url = "https://raw.githubusercontent.com/MeshPilot-in/MeshUtility/main/latest-version.json";
+        let fallback_url = "https://raw.githubusercontent.com/Zclaw89/jarvis-overlay/main/latest-version.json";
         let fb_res = client
             .get(fallback_url)
             .send()
@@ -1072,17 +1940,17 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
 
     let releases_arr = releases.as_array().ok_or("Invalid releases list")?;
 
-    let mut meshutility_release = None;
+    let mut ole_release = None;
     for rel in releases_arr {
         if let Some(tag) = rel["tag_name"].as_str() {
-            if tag.to_lowercase().starts_with("meshutility-") || tag.to_lowercase().starts_with("meshpilot-") {
-                meshutility_release = Some(rel);
+            if tag.to_lowercase().starts_with("ole-") || tag.to_lowercase().starts_with("ole-") {
+                ole_release = Some(rel);
                 break;
             }
         }
     }
 
-    let release = meshutility_release.or_else(|| {
+    let release = ole_release.or_else(|| {
         releases_arr.first().map(|r| r)
     }).ok_or("No releases found")?;
 
@@ -1097,7 +1965,7 @@ async fn check_for_updates(app: AppHandle) -> Result<UpdateCheckResult, String> 
         for asset in assets {
             if let Some(name) = asset["name"].as_str() {
                 let name_lower = name.to_lowercase();
-                if (name_lower.ends_with(".msi") || name_lower.ends_with(".exe")) && (name_lower.contains("meshutility") || name_lower.contains("meshpilot")) {
+                if (name_lower.ends_with(".msi") || name_lower.ends_with(".exe")) && (name_lower.contains("ole") || name_lower.contains("meshpilot")) {
                     if let Some(url) = asset["browser_download_url"].as_str() {
                         download_url = url.to_string();
                         break;
@@ -1162,7 +2030,7 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
     }
 
     let client = reqwest::Client::builder()
-        .user_agent("MeshPilot-Updater")
+        .user_agent("Ole-Updater")
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
@@ -1180,7 +2048,7 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
     
     let temp_dir = std::env::temp_dir();
     let is_msi = download_url.to_lowercase().ends_with(".msi");
-    let file_name = if is_msi { "meshutility-setup.msi" } else { "meshutility-setup.exe" };
+    let file_name = if is_msi { "ole-setup.msi" } else { "ole-setup.exe" };
     let installer_path = temp_dir.join(file_name);
 
     fs::write(&installer_path, bytes).map_err(|e| format!("Failed to write installer file: {e}"))?;
@@ -1229,6 +2097,36 @@ async fn install_update(_app: AppHandle, download_url: String) -> Result<(), Str
 
 // ─── Entry Point ─────────────────────────────────────────────────────────────
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mailbox_write_job_and_read_reply_marks_done() {
+        let root = std::env::temp_dir().join(format!(
+            "ole-mailbox-test-{}-{}",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+
+        let job = write_mailbox_job_at(&root, "analyze this", Some(b"png-bytes")).expect("write mailbox job");
+        let inbox_dir = PathBuf::from(&job.inbox_dir);
+        let outbox_dir = PathBuf::from(&job.outbox_dir);
+
+        assert_eq!(fs::read_to_string(inbox_dir.join("request.txt")).unwrap(), "analyze this");
+        assert!(inbox_dir.join("screenshot.png").exists());
+        assert!(read_mailbox_reply_at(&root, &job.id).unwrap().is_none());
+
+        fs::write(outbox_dir.join("reply.txt"), "Zeus says hello.").unwrap();
+        let reply = read_mailbox_reply_at(&root, &job.id).unwrap();
+
+        assert_eq!(reply.as_deref(), Some("Zeus says hello."));
+        assert!(inbox_dir.join("done.json").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
 fn main() {
     let builder = tauri::Builder::default();
 
@@ -1255,8 +2153,7 @@ fn main() {
 
             // ── Auth Deep Link protocol scheme ──
             use tauri_plugin_deep_link::DeepLinkExt;
-            let _ = app.deep_link().register("meshvoice");
-            let _ = app.deep_link().register("meshprompt");
+            let _ = app.deep_link().register("ole");
 
 
             let (saved_mode, saved_hotkey, saved_model_file, saved_language_mode) = {
@@ -1413,17 +2310,19 @@ fn main() {
 
             // ── Consolidated System Tray ──
             {
-                let title_i = MenuItem::with_id(app, "title", format!("MeshUtility Suite v{}", env!("CARGO_PKG_VERSION")), false, None::<&str>)?;
-                let open_voice = MenuItem::with_id(app, "open_voice", "Open Dictation Suite", true, None::<&str>)?;
-                let open_prompt = MenuItem::with_id(app, "open_prompt", "Open Prompt Enhancer", true, None::<&str>)?;
-                let open_overlay = MenuItem::with_id(app, "open_overlay", "Open Prompt Overlay", true, None::<&str>)?;
+                let title_i = MenuItem::with_id(app, "title", format!("Olé v{}", env!("CARGO_PKG_VERSION")), false, None::<&str>)?;
+                let open_chat = MenuItem::with_id(app, "open_chat", "Open Olé Chat", true, None::<&str>)?;
+                let open_voice = MenuItem::with_id(app, "open_voice", "Open Olé", true, None::<&str>)?;
+                let open_prompt = MenuItem::with_id(app, "open_prompt", "Open AI Tools", true, None::<&str>)?;
+                let open_overlay = MenuItem::with_id(app, "open_overlay", "Open Text Overlay", true, None::<&str>)?;
                 let settings = MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
-                let quit = MenuItem::with_id(app, "quit", "Quit Suite", true, Some("Ctrl+Q"))?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Olé", true, Some("Ctrl+Q"))?;
                 let separator_1 = PredefinedMenuItem::separator(app)?;
                 let separator_2 = PredefinedMenuItem::separator(app)?;
                 let menu = Menu::with_items(app, &[
                     &title_i,
                     &separator_1,
+                    &open_chat,
                     &open_voice,
                     &open_prompt,
                     &open_overlay,
@@ -1433,7 +2332,7 @@ fn main() {
                 ])?;
                 let mut tray_builder = TrayIconBuilder::new()
                     .menu(&menu)
-                    .tooltip("MeshUtility Suite - running in tray")
+                    .tooltip("Olé - running in tray")
                     .show_menu_on_left_click(false)
                     .on_tray_icon_event(|tray, event| {
                         if let tauri::tray::TrayIconEvent::Click {
@@ -1448,6 +2347,9 @@ fn main() {
                         "open_voice" => {
                             let _ = open_main_window(app);
                             let _ = app.emit("navigate-view", "dashboard");
+                        }
+                        "open_chat" => {
+                            let _ = open_widget_chat(app.clone());
                         }
                         "open_prompt" => {
                             let _ = open_main_window(app);
@@ -1509,6 +2411,10 @@ fn main() {
             show_main_window,
             show_widget,
             hide_widget,
+            open_widget_chat,
+            set_widget_click_through,
+            dock_ole_widget,
+            snap_ole_widget_to_edge,
             set_widget_enabled,
             get_language_mode,
             set_language_mode,
@@ -1530,6 +2436,16 @@ fn main() {
             resize_overlay,
             set_paused,
             proxy_request,
+            get_mailbox_paths,
+            create_mailbox_job,
+            read_mailbox_reply,
+            flash_ole_screen,
+            create_dossier_item,
+            list_dossier_items,
+            attach_dossier_analysis,
+            read_dossier_screenshot_base64,
+            import_dossier_file,
+            test_voice,
             check_for_updates,
             install_update,
             unregister_global_shortcut,
