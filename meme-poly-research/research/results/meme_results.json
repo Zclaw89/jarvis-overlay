@@ -1,0 +1,437 @@
+{
+ "4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9": {
+  "wallet": "4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9",
+  "name": "decu",
+  "kol": {
+   "1": [
+    96,
+    54,
+    50
+   ],
+   "7": [
+    558,
+    416,
+    330
+   ],
+   "30": [
+    3580,
+    2051,
+    1383
+   ]
+  },
+  "n_ok": 195,
+  "span_h": 0.0,
+  "n_mints": 1,
+  "n_closed": 1,
+  "realized_sol": 0.79,
+  "ex_top1_sol": 0.0,
+  "win": 1.0,
+  "med_ret": 0.166,
+  "med_hold_min": -0.2,
+  "med_cost_sol": 5.02,
+  "copy": {
+   "0": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "30": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "60": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "300": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   }
+  }
+ },
+ "4xY9T1Q7foJzJsJ6YZDSsfp9zkzeZsXnxd45SixduMmr": {
+  "wallet": "4xY9T1Q7foJzJsJ6YZDSsfp9zkzeZsXnxd45SixduMmr",
+  "name": "zeropnl",
+  "kol": {
+   "1": [
+    117,
+    29,
+    11
+   ],
+   "7": [
+    1356,
+    401,
+    70
+   ],
+   "30": [
+    3553,
+    814,
+    215
+   ]
+  },
+  "n_ok": 505,
+  "span_h": 40.8,
+  "n_mints": 59,
+  "n_closed": 54,
+  "realized_sol": 25.13,
+  "ex_top1_sol": 8.88,
+  "win": 0.61,
+  "med_ret": 0.097,
+  "med_hold_min": 0.2,
+  "med_cost_sol": 5.07,
+  "copy": {
+   "0": {
+    "n": 13,
+    "mean": -0.054,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "30": {
+    "n": 10,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "60": {
+    "n": 8,
+    "mean": -0.027,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "300": {
+    "n": 6,
+    "mean": -0.031,
+    "median": -0.03,
+    "win": 0.0
+   }
+  }
+ },
+ "5YRgrP3mjGzrzirYYN5HAQH19cTYREYwGxW6XRJQUzij": {
+  "wallet": "5YRgrP3mjGzrzirYYN5HAQH19cTYREYwGxW6XRJQUzij",
+  "name": "slingoor",
+  "kol": {
+   "1": [
+    1139,
+    10,
+    4
+   ],
+   "7": [
+    5133,
+    79,
+    55
+   ],
+   "30": [
+    24148,
+    509,
+    309
+   ]
+  },
+  "n_ok": 1500,
+  "span_h": 1.0,
+  "n_mints": 2,
+  "n_closed": 0,
+  "realized_sol": 0,
+  "ex_top1_sol": 0,
+  "win": null,
+  "med_ret": null,
+  "med_hold_min": null,
+  "med_cost_sol": 1.18,
+  "copy": {}
+ },
+ "5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM": {
+  "wallet": "5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM",
+  "name": "Schoen",
+  "kol": {
+   "1": [
+    15,
+    9,
+    4
+   ],
+   "7": [
+    127,
+    258,
+    295
+   ],
+   "30": [
+    809,
+    1189,
+    1360
+   ]
+  },
+  "n_ok": 523,
+  "span_h": 11.4,
+  "n_mints": 0,
+  "n_closed": 0,
+  "realized_sol": 0,
+  "ex_top1_sol": 0,
+  "win": null,
+  "med_ret": null,
+  "med_hold_min": null,
+  "med_cost_sol": null,
+  "copy": {}
+ },
+ "78N177fzNJpp8pG49xDv1efYcTMSzo9tPTKEA9mAVkh2": {
+  "wallet": "78N177fzNJpp8pG49xDv1efYcTMSzo9tPTKEA9mAVkh2",
+  "name": "Sheep",
+  "kol": {
+   "1": [
+    61,
+    17,
+    3
+   ],
+   "7": [
+    99,
+    59,
+    58
+   ],
+   "30": [
+    861,
+    445,
+    381
+   ]
+  },
+  "n_ok": 718,
+  "span_h": 40.8,
+  "n_mints": 64,
+  "n_closed": 55,
+  "realized_sol": 95.22,
+  "ex_top1_sol": 89.8,
+  "win": 0.73,
+  "med_ret": 0.253,
+  "med_hold_min": 0.0,
+  "med_cost_sol": 1.48,
+  "copy": {
+   "0": {
+    "n": 15,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "30": {
+    "n": 13,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "60": {
+    "n": 10,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "300": {
+    "n": 5,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   }
+  }
+ },
+ "862TYSvRYoiHAK3F3WwTRYAfuGiQaGdxedN9AGvRGWo2": {
+  "wallet": "862TYSvRYoiHAK3F3WwTRYAfuGiQaGdxedN9AGvRGWo2",
+  "name": "Wugi",
+  "kol": {
+   "7": [
+    203,
+    16,
+    0
+   ],
+   "30": [
+    679,
+    60,
+    2
+   ]
+  },
+  "n_ok": 498,
+  "span_h": 40.8,
+  "n_mints": 1,
+  "n_closed": 1,
+  "realized_sol": 12.33,
+  "ex_top1_sol": 0.0,
+  "win": 1.0,
+  "med_ret": 0.814,
+  "med_hold_min": 0.0,
+  "med_cost_sol": 15.15,
+  "copy": {
+   "0": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "30": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "60": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "300": {
+    "n": 1,
+    "mean": -0.03,
+    "median": -0.03,
+    "win": 0.0
+   }
+  }
+ },
+ "A3W8psibkTUvjxs4LRscbnjux6TFDXdvD4m4GsGpQ2KJ": {
+  "wallet": "A3W8psibkTUvjxs4LRscbnjux6TFDXdvD4m4GsGpQ2KJ",
+  "name": "Numer0 (trench/arc)",
+  "kol": {
+   "1": [
+    22,
+    11,
+    1
+   ],
+   "7": [
+    85,
+    48,
+    18
+   ],
+   "30": [
+    710,
+    200,
+    159
+   ]
+  },
+  "n_ok": 213,
+  "span_h": 40.8,
+  "n_mints": 32,
+  "n_closed": 30,
+  "realized_sol": 53.41,
+  "ex_top1_sol": 20.51,
+  "win": 0.83,
+  "med_ret": 0.282,
+  "med_hold_min": 0.2,
+  "med_cost_sol": 2.51,
+  "copy": {
+   "0": {
+    "n": 15,
+    "mean": -0.095,
+    "median": -0.03,
+    "win": 0.0
+   },
+   "30": {
+    "n": 15,
+    "mean": -0.057,
+    "median": -0.03,
+    "win": 0.13
+   },
+   "60": {
+    "n": 15,
+    "mean": -0.081,
+    "median": -0.03,
+    "win": 0.07
+   },
+   "300": {
+    "n": 10,
+    "mean": -0.007,
+    "median": -0.03,
+    "win": 0.2
+   }
+  }
+ },
+ "B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC": {
+  "wallet": "B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC",
+  "name": "Kadenox",
+  "kol": {
+   "1": [
+    48,
+    21,
+    9
+   ],
+   "7": [
+    313,
+    144,
+    128
+   ],
+   "30": [
+    766,
+    481,
+    501
+   ]
+  },
+  "n_ok": 9,
+  "span_h": 2.3,
+  "n_mints": 0,
+  "n_closed": 0,
+  "realized_sol": 0,
+  "ex_top1_sol": 0,
+  "win": null,
+  "med_ret": null,
+  "med_hold_min": null,
+  "med_cost_sol": null,
+  "copy": {}
+ },
+ "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o": {
+  "wallet": "CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o",
+  "name": "Cented",
+  "kol": {
+   "7": [
+    672,
+    562,
+    582
+   ],
+   "30": [
+    2394,
+    2030,
+    2671
+   ]
+  },
+  "n_ok": 0,
+  "span_h": 0,
+  "n_mints": 0,
+  "n_closed": 0,
+  "realized_sol": 0,
+  "ex_top1_sol": 0,
+  "win": null,
+  "med_ret": null,
+  "med_hold_min": null,
+  "med_cost_sol": null,
+  "copy": {}
+ },
+ "ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT": {
+  "wallet": "ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT",
+  "name": "trunoest",
+  "kol": {
+   "1": [
+    33,
+    28,
+    31
+   ],
+   "7": [
+    202,
+    165,
+    178
+   ],
+   "30": [
+    1668,
+    1253,
+    1263
+   ]
+  },
+  "n_ok": 143,
+  "span_h": 0.0,
+  "n_mints": 0,
+  "n_closed": 0,
+  "realized_sol": 0,
+  "ex_top1_sol": 0,
+  "win": null,
+  "med_ret": null,
+  "med_hold_min": null,
+  "med_cost_sol": null,
+  "copy": {}
+ }
+}

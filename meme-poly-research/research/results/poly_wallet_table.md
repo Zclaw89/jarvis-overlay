@@ -1,0 +1,18 @@
+| # | Wallet (profile) | Type | Window | Positions | Net P&L | Win | Return on cost | Top win share | Max drawdown | Positive weeks | Main markets | Median buy | Sept copy @5 min |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | [02a923d2f6edbc894e](https://polymarket.com/profile/0x2a923d2f6edbc894e76357104e654b27a0d9071e) `0x2a923d2f6edbc894e76357104e654b27a0d9071e` | HFT bot | 352 d | 962 | $536k | 62% | +4.5% | 21% | $-321k | 3/4 | crypto | $91 | not testable |
+| 2 | [manwithahat](https://polymarket.com/profile/0x0f1b8f81fdcb47b6c3292b8dbf6c2c16b3c4d367) `0x0f1b8f81fdcb47b6c3292b8dbf6c2c16b3c4d367` | Directional | 479 d | 993 | $309k | 54% | +2.5% | 20% | $-284k | 3/5 | crypto | $37 | not testable |
+| 3 | [brockthebaby](https://polymarket.com/profile/0x2adf85be1f25a77ca407cf031bd00d735c05d89c) `0x2adf85be1f25a77ca407cf031bd00d735c05d89c` | HFT bot | 397 d | 963 | $303k | 54% | +8.3% | 6% | $-142k | 1/2 | crypto | $91 | not testable |
+| 4 | [coinman2](https://polymarket.com/profile/0x55be7aa03ecfbe37aa5460db791205f7ac9ddca3) `0x55be7aa03ecfbe37aa5460db791205f7ac9ddca3` | Directional | 151 d | 1239 | $433k | 51% | +10.4% | 57% | $-71k | 17/23 | crypto, sports | $25 | not testable |
+| 5 | [Apsalar](https://polymarket.com/profile/0xd42f6a1634a3707e27cbae14ca966068e5d1047d) `0xd42f6a1634a3707e27cbae14ca966068e5d1047d` | Directional | 672 d | 951 | $297k | 51% | +6.8% | 20% | $-120k | 35/46 | other, sports | $296 | not testable |
+| 6 | [Dropper](https://polymarket.com/profile/0x6bab41a0dc40d6dd4c1a915b8c01969479fd1292) `0x6bab41a0dc40d6dd4c1a915b8c01969479fd1292` | Directional | 466 d | 1020 | $1,263k | 60% | +5.5% | 12% | $-201k | 49/63 | other, geo | $1,061 | not testable |
+| 7 | [stonksgoup](https://polymarket.com/profile/0x4a38e6e0330c2463fb5ac2188a620634039abfe8) `0x4a38e6e0330c2463fb5ac2188a620634039abfe8` | Directional | 507 d | 1181 | $523k | 49% | +5.0% | 19% | $-227k | 12/18 | crypto, geo | $26 | not testable |
+| 8 | [easypredict](https://polymarket.com/profile/0x388537259dc9e693c1c9b96fdf07a63f6b7aca77) `0x388537259dc9e693c1c9b96fdf07a63f6b7aca77` | Directional | 160 d | 1102 | $98k | 47% | +3.1% | 27% | $-40k | 18/23 | crypto | $11 | not testable |
+| 9 | [Tokor](https://polymarket.com/profile/0xa19cbababc312f9df185e49d7004c249ed1ade6b) `0xa19cbababc312f9df185e49d7004c249ed1ade6b` | Directional | 33 d | 971 | $555k | 59% | +37.6% | 82% | $-40k | 5/5 | crypto, other | $101 | -35.3% (n=40) |
+| 10 | [0xa95bfdb](https://polymarket.com/profile/0xebf79787ab928c803cbef6fa8e0abe42b9e1da78) `0xebf79787ab928c803cbef6fa8e0abe42b9e1da78` | Directional | 438 d | 988 | $666k | 60% | +6.7% | 13% | $-251k | 2/4 | crypto | $77 | not testable |
+| 11 | [sovereign2013](https://polymarket.com/profile/0xee613b3fc183ee44f9da9c05f53e2da107e3debf) `0xee613b3fc183ee44f9da9c05f53e2da107e3debf` | HFT bot | 194 d | 993 | $94k | 51% | +3.8% | 23% | $-70k | 2/2 | sports, other | $43 | not testable |
+| 12 | [forgotmydinner](https://polymarket.com/profile/0x4a0eecbf4d18cb6b868f30a7b6e75b7905b9a4b1) `0x4a0eecbf4d18cb6b868f30a7b6e75b7905b9a4b1` | HFT bot | 90 d | 634 | $966k | 31% | +75.7% | 57% | $-21k | 2/8 | other, sports | $400 | not testable |
+| 13 | [Kickstand7](https://polymarket.com/profile/0xd1acd3925d895de9aec98ff95f3a30c5279d08d5) `0xd1acd3925d895de9aec98ff95f3a30c5279d08d5` | Directional | 811 d | 1048 | $884k | 56% | +2.4% | 14% | $-197k | 67/100 | sports, politics | $469 | not testable |
+| 14 | [paddaa](https://polymarket.com/profile/0x60a92c8620846d81f5ea17b0564e0d4b7c545a71) `0x60a92c8620846d81f5ea17b0564e0d4b7c545a71` | Maker/active trader | 145 d | 997 | $166k | 58% | +4.9% | 13% | $-26k | 17/21 | geo, politics | $527 | not testable |
+
+wallets meeting filters with >=30 day window: 61

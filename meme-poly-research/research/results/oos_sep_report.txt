@@ -1,0 +1,35 @@
+wallets in OOS test: 47  trades post: 1637
+group | wallets | their post ret | copy@0 | copy@60s | copy@5m | copy@15m | copy@1h
+ALL wallets | 47 | +0.011 (t+0.4, n1637) | -0.028 (t-1.0, n1637) | -0.041 (t-1.5, n1637) | -0.049 (t-1.8, n1637) | -0.077 (t-3.0, n1628) | -0.114 (t-4.7, n1566)
+top10 by PRE t-stat | 10 | -0.018 (t-0.3, n308) | -0.049 (t-0.8, n308) | -0.074 (t-1.3, n308) | -0.085 (t-1.6, n308) | -0.136 (t-3.1, n300) | -0.154 (t-3.5, n298)
+top20 by PRE t-stat | 20 | +0.030 (t+0.6, n625) | -0.011 (t-0.2, n625) | -0.032 (t-0.7, n625) | -0.066 (t-1.6, n625) | -0.108 (t-2.8, n617) | -0.116 (t-3.2, n576)
+top40 by PRE t-stat | 40 | +0.035 (t+1.1, n1374) | -0.005 (t-0.2, n1374) | -0.019 (t-0.6, n1374) | -0.028 (t-1.0, n1374) | -0.061 (t-2.2, n1365) | -0.098 (t-3.7, n1304)
+bottom half by PRE t-stat | 24 | +0.035 (t+0.9, n892) | -0.002 (t-0.1, n892) | -0.011 (t-0.3, n892) | -0.000 (t-0.0, n892) | -0.025 (t-0.7, n891) | -0.071 (t-2.2, n876)
+corr(pre t-stat, post copy@5m) = -0.059 over 47 wallets
+random 10-wallet copy@5m: median -0.055, 5-95% [-0.180, +0.079]; top10-by-pre: -0.085 (percentile 35)
+entry price 0.0-0.2: copy@5m mean -0.700 median -1.040 win 0.05 n=168
+entry price 0.2-0.5: copy@5m mean +0.055 median -1.000 win 0.41 n=482
+entry price 0.5-0.8: copy@5m mean +0.021 median +0.345 win 0.64 n=645
+entry price 0.8-1.0: copy@5m mean -0.007 median +0.044 win 0.92 n=342
+
+TOP 20 by PRE t-stat, with OOS results
+TheReturnOfDarthMa 0x3a8aa345d5db7ec5138298c8c4f4540259be7699 pre n=40 mean=+1.29 t=+16.2 | post n=40 their=-0.22 copy5m=-0.234 copy1h=-0.236 medPx=0.79 medUSD=3368
+scootergene        0xf3a6ac44c5c90ff2b4afa4459f71acc2e57971bd pre n=40 mean=+0.43 t=+3.1 | post n=40 their=+0.04 copy5m=0.007 copy1h=0.053 medPx=0.50 medUSD=3187
+almost-never       0x88b59d79b6e1659c95a0043028e5bb7a26e6205c pre n=40 mean=+0.18 t=+2.7 | post n=16 their=+0.07 copy5m=0.036 copy1h=-0.028 medPx=0.93 medUSD=381
+ArmageddonRewardsB 0xc8ab97a9089a9ff7e6ef0688e6e591a066946418 pre n=29 mean=+0.28 t=+2.7 | post n=31 their=-0.07 copy5m=-0.083 copy1h=-0.054 medPx=0.93 medUSD=430
+ndb1               0xfea31bc088000ff909be1dfd8d0e3f2c7ef2d227 pre n=40 mean=+0.76 t=+2.6 | post n=40 their=-0.25 copy5m=-0.277 copy1h=-0.296 medPx=0.90 medUSD=120
+Sharky6999         0x751a2b86cab503496efd325c8344e10159349ea1 pre n=40 mean=+0.29 t=+2.4 | post n=40 their=+0.15 copy5m=0.001 copy1h=-0.022 medPx=0.94 medUSD=114
+Jsram              0x83720820a8aa6c3f20ad71850e7a1a17d16c5223 pre n=40 mean=+0.92 t=+2.1 | post n=40 their=-0.00 copy5m=-0.039 copy1h=-0.088 medPx=0.53 medUSD=6920
+KongX              0xede186f37ead91aa618cf8101db2bfe6b6c57dd1 pre n=40 mean=+1.45 t=+1.9 | post n=31 their=+0.06 copy5m=-0.088 copy1h=-0.548 medPx=0.31 medUSD=448
+3edmond.dantes     0x983eedfbd75803602e4a6e6ea9aab6dc6b9c6748 pre n=27 mean=+0.37 t=+1.8 | post n=15 their=-0.17 copy5m=-0.218 copy1h=-0.409 medPx=0.51 medUSD=8222
+Stonktrader        0x73e35ce0b7e36ef3ce29ebd12b30b28007383239 pre n=40 mean=+0.22 t=+1.3 | post n=15 their=+0.49 copy5m=0.233 copy1h=0.191 medPx=0.79 medUSD=443
+PhongLeXBT         0xe94bf89e66b852d60866667bddf7bff9dad65abe pre n=40 mean=+0.18 t=+1.0 | post n=40 their=+0.35 copy5m=0.288 copy1h=0.254 medPx=0.28 medUSD=64
+0xc8b9a30184244d42 0xc8b9a30184244d427169cf62485dde6041b2b836 pre n=40 mean=+0.23 t=+1.0 | post n=28 their=+0.22 copy5m=0.034 copy1h=-0.016 medPx=0.61 medUSD=608
+BreakTheBank       0xf0318c32136c2db7fec88b84869aee6a1106c80c pre n=40 mean=+0.28 t=+0.8 | post n=37 their=+0.15 copy5m=0.094 copy1h=-0.0 medPx=0.50 medUSD=1542
+elPolloLoco        0xa2f1fecf1cc7db65a46588f764b6691533052d22 pre n=25 mean=+0.17 t=+0.8 | post n=21 their=+0.02 copy5m=-0.034 copy1h=-0.082 medPx=0.86 medUSD=3385
+AllByMyseIf        0x5188fa0e8a77e87bc6a58e6781fdfc4e165cc804 pre n=40 mean=+0.09 t=+0.7 | post n=40 their=-0.35 copy5m=-0.387 copy1h=-0.395 medPx=0.53 medUSD=292
+ArturitoFilito     0x336bf6f91a4619d54f0711a20fe468adf4d71233 pre n=40 mean=+0.14 t=+0.7 | post n=22 their=-0.04 copy5m=-0.1 copy1h=-0.243 medPx=0.53 medUSD=176
+ethanaz            0xf28e42d20e4826f2b10a24bc952001697947cab2 pre n=40 mean=+0.09 t=+0.7 | post n=40 their=+0.14 copy5m=0.032 copy1h=-0.115 medPx=0.50 medUSD=7255
+elmcap2            0xed107a85a4585a381e48c7f7ca4144909e7dd2e5 pre n=40 mean=+0.04 t=+0.7 | post n=33 their=+0.07 copy5m=0.026 copy1h=0.04 medPx=0.72 medUSD=805
+Executor398        0x94b9e9764fd9940d6a13d6f1110065923ed12592 pre n=40 mean=+0.29 t=+0.7 | post n=40 their=+0.11 copy5m=-0.378 copy1h=-0.435 medPx=0.15 medUSD=5
+The Spirit of Ukra 0x0c0e270cf879583d6a0142fc817e05b768d0434e pre n=40 mean=+0.02 t=+0.7 | post n=16 their=+0.05 copy5m=0.028 copy1h=0.039 medPx=0.96 medUSD=673
