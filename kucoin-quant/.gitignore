@@ -1,5 +1,0 @@
-data/*.jsonl
-data/state.json
-data/dashboard.html
-research/candles_1h.json
-__pycache__/

@@ -1,0 +1,11 @@
+name         wallet                                            kolscan 7d/30d SOL  ok tx span h closed realized SOL  ex-top1   win  med hold med size | copy n, mean, median at delay 0 / 30s / 60s / 5m
+decu         4vw54BmAogeRV3vPKWyFet5yf8DTLcREzdSzx4rw9Ud9                558/3580    195    0.0      1         0.79     0.00   1.0      -0.2     5.02 | 0s:1,-3%,-3% ; 30s:1,-3%,-3% ; 60s:1,-3%,-3% ; 300s:1,-3%,-3%
+zeropnl      4xY9T1Q7foJzJsJ6YZDSsfp9zkzeZsXnxd45SixduMmr               1356/3553    505   40.8     54        25.13     8.88  0.61       0.2     5.07 | 0s:13,-5%,-3% ; 30s:10,-3%,-3% ; 60s:8,-3%,-3% ; 300s:6,-3%,-3%
+slingoor     5YRgrP3mjGzrzirYYN5HAQH19cTYREYwGxW6XRJQUzij              5133/24148   1500    1.0      0         0.00     0.00  None      None     1.18 | 
+Schoen       5hAgYC8TJCcEZV7LTXAzkTrm7YL29YXyQQJPCNrG84zM                 127/809    523   11.4      0         0.00     0.00  None      None     None | 
+Sheep        78N177fzNJpp8pG49xDv1efYcTMSzo9tPTKEA9mAVkh2                  99/861    718   40.8     55        95.22    89.80  0.73       0.0     1.48 | 0s:15,-3%,-3% ; 30s:13,-3%,-3% ; 60s:10,-3%,-3% ; 300s:5,-3%,-3%
+Wugi         862TYSvRYoiHAK3F3WwTRYAfuGiQaGdxedN9AGvRGWo2                 203/679    498   40.8      1        12.33     0.00   1.0       0.0    15.15 | 0s:1,-3%,-3% ; 30s:1,-3%,-3% ; 60s:1,-3%,-3% ; 300s:1,-3%,-3%
+Numer0 (tren A3W8psibkTUvjxs4LRscbnjux6TFDXdvD4m4GsGpQ2KJ                  85/710    213   40.8     30        53.41    20.51  0.83       0.2     2.51 | 0s:15,-10%,-3% ; 30s:15,-6%,-3% ; 60s:15,-8%,-3% ; 300s:10,-1%,-3%
+Kadenox      B32QbbdDAyhvUQzjcaM5j6ZVKwjCxAwGH5Xgvb9SJqnC                 313/766      9    2.3      0         0.00     0.00  None      None     None | 
+Cented       CyaE1VxvBrahnPWkqm5VsdCvyS2QmNht2UFrKJHga54o                672/2394      0    0.0      0         0.00     0.00  None      None     None | 
+trunoest     ardinRsN1mNYVeoJWTBsWeYeXvuR9UUDGMsCDKpb6AT                 202/1668    143    0.0      0         0.00     0.00  None      None     None | 

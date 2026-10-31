@@ -1,0 +1,5 @@
+Share of round trips where the wallet had ALREADY SOLD before a copier entering after the delay
+wallet     trips  <=10s  <=30s  <=60s  <=5min  median hold realized SOL (41h)  from trips held >5min
+zeropnl       55    49%    71%    87%     96%         12s               25.1                   -4.9
+Sheep         56    66%    77%    86%     96%          2s               95.2                    0.2
+Numer0        30    43%    63%    73%     93%         14s               53.4                    6.9
