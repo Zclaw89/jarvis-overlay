@@ -1,0 +1,12 @@
+symbols 83
+B vol-breakout k=3 H=6h stop=0.03: n=1304 mean=-0.27% median=-1.04% win=31% avgW=+4.21% avgL=-2.24% PF=0.83 t=-1.63
+B vol-breakout k=3 H=24h stop=0.05: n=1134 mean=+0.47% median=-1.25% win=38% avgW=+7.47% avgL=-3.77% PF=1.20 t=+1.41
+B vol-breakout k=5 H=12h stop=0.04: n=595 mean=+0.35% median=-1.29% win=34% avgW=+7.08% avgL=-3.11% PF=1.17 t=+0.64
+B vol-breakout k=5 H=24h stop=0.06: n=569 mean=+1.13% median=-1.40% win=38% avgW=+10.10% avgL=-4.36% PF=1.42 t=+1.80
+B vol-breakout k=8 H=24h stop=0.06: n=306 mean=+2.14% median=-1.36% win=38% avgW=+13.13% avgL=-4.48% PF=1.76 t=+2.01
+C 24h top-5 by 24h return, hold 24h: n=615 mean=-0.96% median=-1.51% win=37% avgW=+9.85% avgL=-7.37% PF=0.79 t=-1.57
+C 24h bottom-5 by 24h return, hold 24h: n=615 mean=+0.27% median=-0.81% win=43% avgW=+8.07% avgL=-5.53% PF=1.08 t=+0.45
+C 24h top-10 by 24h return, hold 24h: n=1230 mean=-0.02% median=-0.97% win=39% avgW=+8.42% avgL=-5.46% PF=0.99 t=-0.04
+C 24h bottom-10 by 24h return, hold 24h: n=1230 mean=+0.13% median=-0.60% win=43% avgW=+5.98% avgL=-4.27% PF=1.05 t=+0.42
+control BTC daily: mean=+0.22% total=+29.1% over 125 days
+E liquid-majors 48h-low dip buy (<-5% 24h), hold 24h: n=1221 mean=+2.94% median=+1.51% win=64% avgW=+6.87% avgL=-4.19% PF=2.97 t=+7.29
